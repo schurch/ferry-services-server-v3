@@ -7,6 +7,8 @@ This repo is intentionally kept simple:
 - Node.js 22+
 - TypeScript
 - Fastify for HTTP
+- TypeBox for config and route schemas
+- OpenAPI and Swagger UI
 - SQLite via `better-sqlite3`
 - direct APNs and FCM push delivery
 - no Docker
@@ -32,7 +34,7 @@ This repo is intentionally kept simple:
 ```text
 ferry-services-server-v3/
   src/
-    api/          Fastify server, routes, OpenAPI/static serving
+    api/          Fastify server, routes, OpenAPI/Swagger/static serving
     config/       typed environment/config loading
     db/           SQLite connection, migrations, query modules
     jobs/         scraper/fetcher/ingester/snapshot CLI entry points
@@ -52,6 +54,13 @@ The API should run as a normal Node process behind a reverse proxy:
 
 ```bash
 node dist/api/server.js
+```
+
+API documentation should be available at:
+
+```text
+/openapi.json
+/swagger
 ```
 
 Scheduled work should run as separate commands, triggered by cron or systemd timers:
@@ -121,4 +130,3 @@ v3 should not use AWS SNS.
 4. Port offline SQLite snapshot generation.
 5. Port background fetchers and TransXChange ingest.
 6. Add CI artifact packaging and VPS deployment scripts.
-
