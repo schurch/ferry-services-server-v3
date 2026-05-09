@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Package artifact
+        if: github.ref == 'refs/heads/main'
+        run: |
+          tar -czf ferry-services-server-v3-${{ github.sha }}.tar.gz \
+            dist \
+            package.json \
+            package-lock.json \
+            sqlite \
+            public \
+            scripts
+
+      - name: Upload artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ferry-services-server-v3-${{ github.sha }}
+          path: ferry-services-server-v3-${{ github.sha }}.tar.gz
