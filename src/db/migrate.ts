@@ -6,8 +6,10 @@ import { openDatabase } from "./database.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const migrationsDir = path.resolve(__dirname, "../../sqlite/migrations");
+const seedPath = path.resolve(__dirname, "../../sqlite/seed.sql");
 
 const db = openDatabase();
+db.pragma("journal_mode = WAL");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -36,5 +38,11 @@ if (fs.existsSync(migrationsDir)) {
   }
 }
 
-db.close();
+const referenceData = db.prepare("SELECT COUNT(*) AS count FROM organisations").get() as { count: number };
+if (referenceData.count === 0) {
+  const seed = fs.readFileSync(seedPath, "utf8");
+  db.exec(seed);
+  console.log("Loaded seed data");
+}
 
+db.close();

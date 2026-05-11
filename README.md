@@ -20,7 +20,7 @@ This repo is intentionally kept simple:
 - Keep SQLite as the primary data store.
 - Keep background work as explicit CLI jobs rather than adding a queue system.
 - Build in CI, not on the VPS.
-- Remove AWS SNS from push notifications and call Apple/Google directly.
+- Call Apple/Google directly for push notifications.
 
 ## Non-Goals
 
@@ -42,8 +42,8 @@ ferry-services-server-v3/
     types/        API and domain types
   sqlite/
     migrations/   forward-only SQL migrations
-    schema.sql    baseline schema once ported
-    seed.sql      development seed data once ported
+    schema.sql    baseline schema
+    seed.sql      development seed data
   public/         static web/API docs assets if needed
   scripts/        deploy and maintenance scripts
 ```
@@ -104,6 +104,16 @@ npm run migrate
 systemctl restart ferry-services
 ```
 
+## Database
+
+Use one database command for local setup and production deploys:
+
+```bash
+npm run migrate
+```
+
+It creates the database if needed, applies pending migrations, and loads reference seed data when the database is empty. The baseline intentionally omits the v2 `tx2_*` TransXChange tables. The v3 TransXChange importer should define new tables without carrying the v2-specific table prefix or import model forward.
+
 SQLite data should live outside release directories:
 
 ```text
@@ -115,8 +125,6 @@ SQLite data should live outside release directories:
 ```
 
 ## Push Notifications
-
-v3 should not use AWS SNS.
 
 - iOS: send directly to APNs using token-based authentication.
 - Android: send directly to FCM HTTP v1 using Google service account credentials.
