@@ -21,24 +21,111 @@ type MarineTrafficVessel = {
 
 type VesselFetchResult = VesselPosition | "blocked" | null;
 
+type OrganisationVessels = {
+  organisationId: OrganisationId;
+  organisationName: string;
+  mmsis: Mmsi[];
+};
+
 const initCycleTLS = cycleTLS.default as unknown as () => Promise<CycleTLSClient>;
 
-const defaultMmsis: Array<[OrganisationId, Mmsi[]]> = [
-  [1, [
-    232003244, 235104000, 232000420, 232003376, 232003369, 232003371, 232003370, 232343000, 232605000,
-    232003165, 232003368, 232003372, 232001580, 232002521, 232002598, 232003073, 232003288, 235056506,
-    235000141, 235000864, 235087611, 235008928, 235008929, 235025112, 235052541, 235053239, 235052285,
-    235083892, 235099235, 235099237, 235101635, 235116772, 232003166, 232019501, 232049068
-  ]],
-  [2, [235449000, 235450000, 235448000]],
-  [3, [235001902, 235013197, 235101062, 235101063]],
-  [4, [
-    232003606, 232003604, 232003597, 232003605, 235009928, 232003608, 232003598, 235003893, 235014766,
-    235014768, 232003596, 232003607
-  ]],
-  [5, [232000670, 232000760, 232000550, 235019175, 235018907, 235021681, 235019173, 235019174, 235018919, 232029607, 235021681]],
-  [6, [235061705]],
-  [7, [235001223, 235002334]]
+const trackedVessels: OrganisationVessels[] = [
+  {
+    organisationId: 1,
+    organisationName: "CalMac",
+    mmsis: [
+      232003244,
+      235104000,
+      232000420,
+      232003376,
+      232003369,
+      232003371,
+      232003370,
+      232343000,
+      232605000,
+      232003165,
+      232003368,
+      232003372,
+      232001580,
+      232002521,
+      232002598,
+      232003073,
+      232003288,
+      235056506,
+      235000141,
+      235000864,
+      235087611,
+      235008928,
+      235008929,
+      235025112,
+      235052541,
+      235053239,
+      235052285,
+      235083892,
+      235099235,
+      235099237,
+      235101635,
+      235116772,
+      232003166,
+      232019501,
+      232049068
+    ]
+  },
+  {
+    organisationId: 2,
+    organisationName: "NorthLink",
+    mmsis: [235449000, 235450000, 235448000]
+  },
+  {
+    organisationId: 3,
+    organisationName: "Western Ferries",
+    mmsis: [235001902, 235013197, 235101062, 235101063]
+  },
+  {
+    organisationId: 4,
+    organisationName: "Shetland Ferries",
+    mmsis: [
+      232003606,
+      232003604,
+      232003597,
+      232003605,
+      235009928,
+      232003608,
+      232003598,
+      235003893,
+      235014766,
+      235014768,
+      232003596,
+      232003607
+    ]
+  },
+  {
+    organisationId: 5,
+    organisationName: "Orkney Ferries",
+    mmsis: [
+      232000670,
+      232000760,
+      232000550,
+      235019175,
+      235018907,
+      235021681,
+      235019173,
+      235019174,
+      235018919,
+      232029607,
+      235021681
+    ]
+  },
+  {
+    organisationId: 6,
+    organisationName: "Pentland Ferries",
+    mmsis: [235061705]
+  },
+  {
+    organisationId: 7,
+    organisationName: "Highland Council",
+    mmsis: [235001223, 235002334]
+  }
 ];
 
 function parseNumber(value: unknown): number | undefined {
@@ -149,7 +236,7 @@ async function main(): Promise<void> {
   const db = openDatabase();
   const client = await initCycleTLS();
   try {
-    for (const [organisationId, mmsis] of defaultMmsis) {
+    for (const { organisationId, mmsis } of trackedVessels) {
       for (const mmsi of mmsis) {
         const vessel = await fetchVessel(client, organisationId, mmsi);
         if (vessel === "blocked") {
