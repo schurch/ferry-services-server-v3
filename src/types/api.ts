@@ -6,12 +6,21 @@ export type PushStatus = {
   enabled: boolean;
 };
 
+export type CreateInstallationRequest = {
+  deviceToken: string;
+  deviceType: DeviceType;
+};
+
+export type AddServiceRequest = {
+  serviceId: number;
+};
+
 export type OrganisationResponse = {
   id: number;
   name: string;
   website?: string;
-  local_number?: string;
-  international_number?: string;
+  localNumber?: string;
+  internationalNumber?: string;
   email?: string;
   x?: string;
   facebook?: string;
@@ -20,19 +29,19 @@ export type OrganisationResponse = {
 export type LocationWeatherResponse = {
   icon: string;
   description: string;
-  temperature_celsius: number;
-  wind_speed_mph: number;
-  wind_direction: number;
-  wind_direction_cardinal: string;
+  temperatureCelsius: number;
+  windSpeedMph: number;
+  windDirection: number;
+  windDirectionCardinal: string;
 };
 
 export type RailDepartureResponse = {
   from: string;
   to: string;
   departure: string;
-  departure_info: string;
+  departureInfo: string;
   platform?: string;
-  is_cancelled: boolean;
+  isCancelled: boolean;
 };
 
 export type LocationResponse = {
@@ -40,9 +49,9 @@ export type LocationResponse = {
   name: string;
   latitude: number;
   longitude: number;
-  scheduled_departures?: DepartureResponse[];
-  next_departure?: DepartureResponse;
-  next_rail_departure?: RailDepartureResponse;
+  scheduledDepartures?: DepartureResponse[];
+  nextDeparture?: DepartureResponse;
+  nextRailDeparture?: RailDepartureResponse;
   weather?: LocationWeatherResponse;
 };
 
@@ -60,35 +69,35 @@ export type VesselResponse = {
   course?: number;
   latitude: number;
   longitude: number;
-  last_received: string;
+  lastReceived: string;
 };
 
 export type TimetableDocumentResponse = {
   id: number;
-  organisation_id: number;
-  organisation_name: string;
-  service_ids: number[];
+  organisationId: number;
+  organisationName: string;
+  serviceIds: number[];
   title: string;
-  source_url: string;
-  content_hash?: string;
-  content_type?: string;
-  content_length?: number;
-  last_seen_at: string;
+  sourceUrl: string;
+  contentHash?: string;
+  contentType?: string;
+  contentLength?: number;
+  lastSeenAt: string;
   updated: string;
 };
 
 export type ServiceResponse = {
-  service_id: number;
+  serviceId: number;
   area: string;
   route: string;
   status: ServiceStatus;
   locations: LocationResponse[];
-  additional_info?: string;
-  disruption_reason?: string;
-  last_updated_date?: string;
+  additionalInfo?: string;
+  disruptionReason?: string;
+  lastUpdatedDate?: string;
   vessels: VesselResponse[];
   operator?: OrganisationResponse;
-  scheduled_departures_available: boolean;
+  scheduledDeparturesAvailable: boolean;
   updated: string;
-  timetable_documents?: TimetableDocumentResponse[];
+  timetableDocuments?: TimetableDocumentResponse[];
 };

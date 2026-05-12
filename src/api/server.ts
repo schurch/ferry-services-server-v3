@@ -4,8 +4,10 @@ import swaggerUi from "@fastify/swagger-ui";
 import { Type } from "@sinclair/typebox";
 import Fastify from "fastify";
 import { config } from "../config/config.js";
-import { etagForJson, getService, listServices, listTimetableDocuments, listVessels } from "../db/api.js";
+import { etagForJson, getService, listInstallationServices, listServices, listTimetableDocuments, listVessels } from "../db/api.js";
 import { openDatabase } from "../db/database.js";
+import { addInstallationService, deleteInstallationService, getPushStatus, updatePushStatus, upsertInstallation } from "../db/installations.js";
+import { serviceToApi, timetableDocumentToApi, vesselToApi } from "./wire.js";
 
 const app = Fastify({ logger: true });
 const db = openDatabase();
@@ -23,6 +25,15 @@ const ServiceIDParams = Type.Object({
   serviceID: Type.Integer()
 });
 
+const InstallationIDParams = Type.Object({
+  installationID: Type.String()
+});
+
+const InstallationServiceParams = Type.Object({
+  installationID: Type.String(),
+  serviceID: Type.Integer()
+});
+
 const ServiceDetailQuery = Type.Object({
   departuresDate: Type.Optional(Type.String({ format: "date" }))
 });
@@ -30,6 +41,47 @@ const ServiceDetailQuery = Type.Object({
 const TimetableDocumentsQuery = Type.Object({
   serviceID: Type.Optional(Type.Integer())
 });
+
+const CreateInstallationRequest = Type.Object({
+  device_token: Type.String(),
+  device_type: Type.Union([Type.Literal("IOS"), Type.Literal("Android")])
+});
+
+const AddServiceRequest = Type.Object({
+  service_id: Type.Integer()
+});
+
+const PushStatus = Type.Object({
+  enabled: Type.Boolean()
+});
+
+const ErrorResponse = Type.Object({
+  error: Type.String(),
+  message: Type.String()
+});
+
+type CreateInstallationRequestBody = {
+  device_token: string;
+  device_type: "IOS" | "Android";
+};
+
+type AddServiceRequestBody = {
+  service_id: number;
+};
+
+type PushStatusBody = {
+  enabled: boolean;
+};
+
+function parseInstallationId(value: string): string | null {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value.toLowerCase()
+    : null;
+}
+
+function savedServicesForInstallation(installationId: string): Record<string, unknown>[] {
+  return listInstallationServices(db, installationId).map(serviceToApi);
+}
 
 await app.register(swagger, {
   openapi: {
@@ -81,7 +133,7 @@ app.get("/api/services", {
       200: Type.Array(Type.Any())
     }
   }
-}, async () => listServices(db));
+}, async () => listServices(db).map(serviceToApi));
 
 app.get("/api/services/:serviceID", {
   schema: {
@@ -96,7 +148,149 @@ app.get("/api/services/:serviceID", {
   }
 }, async (request) => {
   const { serviceID } = request.params as { serviceID: number };
-  return getService(db, serviceID);
+  const service = getService(db, serviceID);
+  return service ? serviceToApi(service) : null;
+});
+
+app.post("/api/installations/:installationID", {
+  schema: {
+    summary: "Create installation",
+    description: "Registers a mobile app installation for push notifications and returns that installation's saved services.",
+    tags: ["Ferry Services API"],
+    params: InstallationIDParams,
+    body: CreateInstallationRequest,
+    response: {
+      200: Type.Array(Type.Any()),
+      400: ErrorResponse
+    }
+  }
+}, async (request, reply) => {
+  const { installationID } = request.params as { installationID: string };
+  const installationId = parseInstallationId(installationID);
+  if (!installationId) {
+    return reply.code(400).send({ error: "Bad Request", message: "Invalid installationID" });
+  }
+
+  const body = request.body as CreateInstallationRequestBody;
+  upsertInstallation(db, installationId, {
+    deviceToken: body.device_token,
+    deviceType: body.device_type
+  });
+  return savedServicesForInstallation(installationId);
+});
+
+app.get("/api/installations/:installationID/push-status", {
+  schema: {
+    summary: "Get push status",
+    description: "Returns whether push notifications are enabled for the mobile app installation.",
+    tags: ["Ferry Services API"],
+    params: InstallationIDParams,
+    response: {
+      200: PushStatus,
+      400: ErrorResponse,
+      404: ErrorResponse
+    }
+  }
+}, async (request, reply) => {
+  const { installationID } = request.params as { installationID: string };
+  const installationId = parseInstallationId(installationID);
+  if (!installationId) {
+    return reply.code(400).send({ error: "Bad Request", message: "Invalid installationID" });
+  }
+
+  const status = getPushStatus(db, installationId);
+  return status ?? reply.code(404).send({ error: "Not Found", message: "Installation not found" });
+});
+
+app.post("/api/installations/:installationID/push-status", {
+  schema: {
+    summary: "Update push status",
+    description: "Enables or disables push notifications for the mobile app installation.",
+    tags: ["Ferry Services API"],
+    params: InstallationIDParams,
+    body: PushStatus,
+    response: {
+      200: PushStatus,
+      400: ErrorResponse,
+      404: ErrorResponse
+    }
+  }
+}, async (request, reply) => {
+  const { installationID } = request.params as { installationID: string };
+  const installationId = parseInstallationId(installationID);
+  if (!installationId) {
+    return reply.code(400).send({ error: "Bad Request", message: "Invalid installationID" });
+  }
+
+  const status = updatePushStatus(db, installationId, request.body as PushStatusBody);
+  return status ?? reply.code(404).send({ error: "Not Found", message: "Installation not found" });
+});
+
+app.get("/api/installations/:installationID/services", {
+  schema: {
+    summary: "List installation services",
+    description: "Returns the services saved by one mobile app installation.",
+    tags: ["Ferry Services API"],
+    params: InstallationIDParams,
+    response: {
+      200: Type.Array(Type.Any()),
+      400: ErrorResponse
+    }
+  }
+}, async (request, reply) => {
+  const { installationID } = request.params as { installationID: string };
+  const installationId = parseInstallationId(installationID);
+  if (!installationId) {
+    return reply.code(400).send({ error: "Bad Request", message: "Invalid installationID" });
+  }
+
+  return savedServicesForInstallation(installationId);
+});
+
+app.post("/api/installations/:installationID/services", {
+  schema: {
+    summary: "Add installation service",
+    description: "Adds a service to one mobile app installation and returns the updated saved service list.",
+    tags: ["Ferry Services API"],
+    params: InstallationIDParams,
+    body: AddServiceRequest,
+    response: {
+      200: Type.Array(Type.Any()),
+      400: ErrorResponse
+    }
+  }
+}, async (request, reply) => {
+  const { installationID } = request.params as { installationID: string };
+  const installationId = parseInstallationId(installationID);
+  if (!installationId) {
+    return reply.code(400).send({ error: "Bad Request", message: "Invalid installationID" });
+  }
+
+  const { service_id: serviceId } = request.body as AddServiceRequestBody;
+  addInstallationService(db, installationId, serviceId);
+  return savedServicesForInstallation(installationId);
+});
+
+app.delete("/api/installations/:installationID/services/:serviceID", {
+  schema: {
+    summary: "Delete installation service",
+    description: "Removes a service from one mobile app installation and returns the updated saved service list.",
+    tags: ["Ferry Services API"],
+    params: InstallationServiceParams,
+    response: {
+      200: Type.Array(Type.Any()),
+      400: ErrorResponse
+    }
+  }
+}, async (request, reply) => {
+  const { installationID, serviceID } = request.params as { installationID: string; serviceID: number };
+  const installationId = parseInstallationId(installationID);
+  if (!installationId) {
+    return reply.code(400).send({ error: "Bad Request", message: "Invalid installationID" });
+  }
+
+  deleteInstallationService(db, installationId, serviceID);
+  return savedServicesForInstallation(installationId);
 });
 
 app.get("/api/vessels", {
@@ -108,7 +302,7 @@ app.get("/api/vessels", {
       200: Type.Array(Type.Any())
     }
   }
-}, async () => listVessels(db));
+}, async () => listVessels(db).map(vesselToApi));
 
 app.get("/api/timetable-documents", {
   schema: {
@@ -123,7 +317,7 @@ app.get("/api/timetable-documents", {
   }
 }, async (request, reply) => {
   const { serviceID } = request.query as { serviceID?: number };
-  const documents = listTimetableDocuments(db, serviceID);
+  const documents = listTimetableDocuments(db, serviceID).map(timetableDocumentToApi);
   const etag = etagForJson(documents);
   reply.header("Cache-Control", "private, no-cache, no-transform");
   reply.header("ETag", etag);

@@ -122,10 +122,10 @@ function weatherResponse(row: WeatherRow): LocationWeatherResponse {
   return {
     icon: row.icon,
     description: row.description.charAt(0).toUpperCase() + row.description.slice(1).toLowerCase(),
-    temperature_celsius: Math.round(row.temperature - 273.15),
-    wind_speed_mph: Math.round(row.wind_speed * 2.236936284),
-    wind_direction: row.wind_direction,
-    wind_direction_cardinal: cardinalDirection(row.wind_direction)
+    temperatureCelsius: Math.round(row.temperature - 273.15),
+    windSpeedMph: Math.round(row.wind_speed * 2.236936284),
+    windDirection: row.wind_direction,
+    windDirectionCardinal: cardinalDirection(row.wind_direction)
   };
 }
 
@@ -137,7 +137,7 @@ function vesselResponse(row: VesselRow): VesselResponse {
     course: value(row.course),
     latitude: row.latitude,
     longitude: row.longitude,
-    last_received: timestampResponse(row.last_received)
+    lastReceived: timestampResponse(row.last_received)
   };
 }
 
@@ -168,9 +168,9 @@ function createLocationLookup(db: Database.Database): Map<number, LocationRespon
         from: row.departure_name,
         to: row.destination_name,
         departure,
-        departure_info: row.estimated_departure_time,
+        departureInfo: row.estimated_departure_time,
         platform: value(row.platform),
-        is_cancelled: row.cancelled !== 0
+        isCancelled: row.cancelled !== 0
       });
     }
   }
@@ -191,7 +191,7 @@ function createLocationLookup(db: Database.Database): Map<number, LocationRespon
       latitude: row.latitude,
       longitude: row.longitude,
       weather: weatherByLocation.get(row.location_id),
-      next_rail_departure: nextRailByLocation.get(row.location_id)
+      nextRailDeparture: nextRailByLocation.get(row.location_id)
     });
     lookup.set(row.service_id, locations);
   }
@@ -209,8 +209,8 @@ function createOrganisationLookup(db: Database.Database): Map<number, Organisati
     id: row.organisation_id,
     name: row.name,
     website: value(row.website),
-    local_number: value(row.local_phone),
-    international_number: value(row.international_phone),
+    localNumber: value(row.local_phone),
+    internationalNumber: value(row.international_phone),
     email: value(row.email),
     x: value(row.x),
     facebook: value(row.facebook)
@@ -262,19 +262,19 @@ function serviceResponse(
   now = new Date()
 ): ServiceResponse {
   return {
-    service_id: row.service_id,
+    serviceId: row.service_id,
     area: row.area,
     route: row.route,
     status: staleStatus(row.status, row.updated, now),
     locations: lookups.locations.get(row.service_id) ?? [],
-    additional_info: value(row.additional_info),
-    disruption_reason: value(row.disruption_reason),
-    last_updated_date: optionalTimestampResponse(row.last_updated_date),
+    additionalInfo: value(row.additional_info),
+    disruptionReason: value(row.disruption_reason),
+    lastUpdatedDate: optionalTimestampResponse(row.last_updated_date),
     vessels: lookups.vessels.get(row.service_id) ?? [],
     operator: lookups.organisations.get(row.service_id),
-    scheduled_departures_available: false,
+    scheduledDeparturesAvailable: false,
     updated: timestampResponse(row.updated),
-    timetable_documents: lookups.timetableDocuments === undefined ? undefined : lookups.timetableDocuments.get(row.service_id) ?? []
+    timetableDocuments: lookups.timetableDocuments === undefined ? undefined : lookups.timetableDocuments.get(row.service_id) ?? []
   };
 }
 
@@ -312,15 +312,15 @@ function createTimetableDocumentResponses(db: Database.Database, serviceId?: num
 
   return rows.map((row) => ({
     id: row.timetable_document_id,
-    organisation_id: row.organisation_id,
-    organisation_name: row.organisation_name,
-    service_ids: serviceIdsByDocument.get(row.timetable_document_id) ?? [],
+    organisationId: row.organisation_id,
+    organisationName: row.organisation_name,
+    serviceIds: serviceIdsByDocument.get(row.timetable_document_id) ?? [],
     title: row.title,
-    source_url: row.source_url,
-    content_hash: value(row.content_hash),
-    content_type: value(row.content_type),
-    content_length: value(row.content_length),
-    last_seen_at: timestampResponse(row.last_seen_at),
+    sourceUrl: row.source_url,
+    contentHash: value(row.content_hash),
+    contentType: value(row.content_type),
+    contentLength: value(row.content_length),
+    lastSeenAt: timestampResponse(row.last_seen_at),
     updated: timestampResponse(row.updated)
   }));
 }
@@ -382,6 +382,25 @@ export function getService(db: Database.Database, serviceId: number): ServiceRes
     vessels: createServiceVesselLookup(db, now),
     timetableDocuments: createTimetableDocumentLookup(db)
   }, now);
+}
+
+export function listInstallationServices(db: Database.Database, installationId: string): ServiceResponse[] {
+  const now = new Date();
+  const rows = db.prepare(`
+    SELECT s.service_id, s.area, s.route, s.status, s.additional_info, s.disruption_reason, s.organisation_id, s.last_updated_date, s.updated
+    FROM services s
+    JOIN installation_services i ON s.service_id = i.service_id
+    WHERE i.installation_id = ? AND s.visible = 1
+    ORDER BY s.area, s.route
+  `).all(installationId) as ServiceRow[];
+
+  const lookups = {
+    locations: createLocationLookup(db),
+    organisations: createOrganisationLookup(db),
+    vessels: createServiceVesselLookup(db, now)
+  };
+
+  return rows.map((row) => serviceResponse(row, lookups, now));
 }
 
 export function listVessels(db: Database.Database): VesselResponse[] {
