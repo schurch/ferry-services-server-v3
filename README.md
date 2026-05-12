@@ -79,6 +79,7 @@ Each job should do one pass of its work, log failures for individual records, an
 The fetchers are also available through npm scripts after a build:
 
 ```bash
+npm run scrape
 npm run fetch:weather
 npm run fetch:vessels
 ```

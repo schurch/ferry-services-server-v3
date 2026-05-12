@@ -23,3 +23,15 @@ export type VesselPosition = {
   lastReceived: string;
   organisationId: number;
 };
+
+export type ScrapedService = {
+  serviceId: number;
+  area: string;
+  route: string;
+  status: 0 | 1 | 2 | -99;
+  additionalInfo?: string;
+  disruptionReason?: string;
+  organisationId: number;
+  lastUpdatedDate?: string;
+  updated: string;
+};

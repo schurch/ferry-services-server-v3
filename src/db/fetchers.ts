@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { Location, VesselPosition, WeatherObservation } from "../types/fetchers.js";
+import type { Location, ScrapedService, VesselPosition, WeatherObservation } from "../types/fetchers.js";
 
 export function listLocations(db: Database.Database): Location[] {
   return db.prepare(`
@@ -46,4 +46,58 @@ export function saveVessel(db: Database.Database, vessel: VesselPosition): void 
     vessel.lastReceived,
     vessel.organisationId
   );
+}
+
+export function listServiceIdsForOrganisation(db: Database.Database, organisationId: number): number[] {
+  return (db.prepare(`
+    SELECT service_id
+    FROM services
+    WHERE organisation_id = ?
+    ORDER BY service_id
+  `).all(organisationId) as Array<{ service_id: number }>).map((row) => row.service_id);
+}
+
+export function saveServices(db: Database.Database, services: ScrapedService[]): void {
+  const save = db.prepare(`
+    INSERT INTO services (service_id, area, route, status, additional_info, disruption_reason, organisation_id, last_updated_date, updated)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (service_id) DO UPDATE
+      SET area = excluded.area,
+          route = excluded.route,
+          status = excluded.status,
+          additional_info = excluded.additional_info,
+          disruption_reason = excluded.disruption_reason,
+          organisation_id = excluded.organisation_id,
+          last_updated_date = excluded.last_updated_date,
+          updated = excluded.updated,
+          visible = 1
+  `);
+
+  const transaction = db.transaction((items: ScrapedService[]) => {
+    for (const service of items) {
+      save.run(
+        service.serviceId,
+        service.area,
+        service.route,
+        service.status,
+        service.additionalInfo ?? null,
+        service.disruptionReason ?? null,
+        service.organisationId,
+        service.lastUpdatedDate ?? null,
+        service.updated
+      );
+    }
+  });
+
+  transaction(services);
+}
+
+export function hideServices(db: Database.Database, serviceIds: number[]): void {
+  const hide = db.prepare("UPDATE services SET visible = 0 WHERE service_id = ?");
+  const transaction = db.transaction((ids: number[]) => {
+    for (const serviceId of ids) {
+      hide.run(serviceId);
+    }
+  });
+  transaction(serviceIds);
 }
