@@ -6,6 +6,7 @@ const envSchema = Type.Object({
   HOST: Type.Optional(Type.String({ minLength: 1 })),
   PORT: Type.Optional(Type.Integer({ minimum: 1, maximum: 65535 })),
   DATABASE_PATH: Type.Optional(Type.String({ minLength: 1 })),
+  OPENWEATHERMAP_APPID: Type.Optional(Type.String()),
   APNS_TEAM_ID: Type.Optional(Type.String()),
   APNS_KEY_ID: Type.Optional(Type.String()),
   APNS_BUNDLE_ID: Type.Optional(Type.String()),
@@ -39,6 +40,7 @@ const env = Value.Parse(envSchema, {
   HOST: process.env.HOST,
   PORT: parseOptionalInteger(process.env.PORT),
   DATABASE_PATH: process.env.DATABASE_PATH,
+  OPENWEATHERMAP_APPID: process.env.OPENWEATHERMAP_APPID,
   APNS_TEAM_ID: process.env.APNS_TEAM_ID,
   APNS_KEY_ID: process.env.APNS_KEY_ID,
   APNS_BUNDLE_ID: process.env.APNS_BUNDLE_ID,
@@ -53,6 +55,7 @@ export const config = {
   host: env.HOST ?? "127.0.0.1",
   port: env.PORT ?? 4321,
   databasePath: env.DATABASE_PATH ?? "./data/ferry-services.sqlite3",
+  openWeatherMapAppId: env.OPENWEATHERMAP_APPID ?? null,
   apns: {
     teamId: env.APNS_TEAM_ID ?? null,
     keyId: env.APNS_KEY_ID ?? null,

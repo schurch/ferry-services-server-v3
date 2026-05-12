@@ -18,7 +18,7 @@ This repo is intentionally kept simple:
 
 - Preserve the existing mobile API contract while porting from v2 in small slices.
 - Keep SQLite as the primary data store.
-- Keep background work as explicit CLI jobs rather than adding a queue system.
+- Keep background work as one-shot CLI jobs rather than adding a queue system or in-process scheduler.
 - Build in CI, not on the VPS.
 - Call Apple/Google directly for push notifications.
 
@@ -63,7 +63,7 @@ API documentation should be available at:
 /swagger
 ```
 
-Scheduled work should run as separate commands, triggered by cron or systemd timers:
+Scheduled work should run as separate one-shot commands, triggered by cron or systemd timers:
 
 ```bash
 node dist/jobs/scraper.js
@@ -73,6 +73,17 @@ node dist/jobs/transxchange-ingester.js
 node dist/jobs/rail-departure-fetcher.js
 node dist/jobs/offline-snapshot-generator.js
 ```
+
+Each job should do one pass of its work, log failures for individual records, and exit. Repetition belongs outside the Node process; for example, run weather roughly every 15 minutes and vessel positions roughly every 5 minutes from systemd timers. This keeps deploys, restarts, and failures simple.
+
+The fetchers are also available through npm scripts after a build:
+
+```bash
+npm run fetch:weather
+npm run fetch:vessels
+```
+
+Weather fetching requires `OPENWEATHERMAP_APPID`.
 
 ## Deployment Model
 
