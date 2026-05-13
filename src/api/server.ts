@@ -132,7 +132,8 @@ app.get("/api/services/:serviceID", {
   }
 }, async (request) => {
   const { serviceID } = request.params as { serviceID: number };
-  const service = getService(db, serviceID);
+  const { departuresDate } = request.query as { departuresDate?: string };
+  const service = getService(db, serviceID, departuresDate);
   return service ? serviceToApi(service) : null;
 });
 
