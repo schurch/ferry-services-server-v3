@@ -86,11 +86,12 @@ npm run fetch:rail
 npm run fetch:timetable-documents
 npm run ingest:transxchange
 npm run ingest:transxchange -- /path/to/extracted/S # local fixture/feed override
+npm run ingest:transxchange -- ./S.zip # local downloaded ZIP override
 ```
 
 Weather fetching requires `OPENWEATHERMAP_APPID`.
 Rail departure fetching requires `RAIL_DATA_API_KEY`.
-TransXChange ingest requires `TRAVELLINE_FTP_ADDRESS`, `TRAVELLINE_FTP_USERNAME`, and `TRAVELLINE_FTP_PASSWORD` when no local directory is passed. It downloads `S.zip`, extracts it under `data/transxchange-ingest`, and stores the normalized TransXChange data.
+TransXChange ingest requires `TRAVELLINE_FTP_ADDRESS`, `TRAVELLINE_FTP_USERNAME`, and `TRAVELLINE_FTP_PASSWORD` when no local directory or ZIP file is passed. It downloads and extracts `S.zip` temporarily under `data/transxchange-ingest`, stores the normalized TransXChange data, and removes the temporary ingest directory. To rerun without FTP, pass a ZIP file stored outside `data/transxchange-ingest`.
 
 ## Deployment Model
 
@@ -150,7 +151,7 @@ SQLite data should live outside release directories:
 
 ## Porting Order
 
-1. Bootstrap Fastify, config, SQLite, migrations, and health check.
+1. Bootstrap Fastify, config, SQLite, and migrations.
 2. Port read-only API contract: `/api/services`, `/api/services/:serviceID`, `/api/vessels`, `/api/timetable-documents`.
 3. Port installations and direct push registration/delivery.
 4. Port offline SQLite snapshot generation.

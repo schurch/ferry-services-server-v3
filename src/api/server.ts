@@ -12,10 +12,6 @@ import { serviceToApi, timetableDocumentToApi, vesselToApi } from "./wire.js";
 const app = Fastify({ logger: true });
 const db = openDatabase();
 
-const HealthResponse = Type.Object({
-  ok: Type.Boolean()
-});
-
 const RootResponse = Type.Object({
   ok: Type.Boolean(),
   message: Type.String()
@@ -111,18 +107,6 @@ app.get(
   },
   async () => app.swagger()
 );
-
-app.get("/api/health", {
-  schema: {
-    summary: "Health check",
-    tags: ["Ferry Services API"],
-    response: {
-      200: HealthResponse
-    }
-  }
-}, async () => ({
-  ok: true
-}));
 
 app.get("/api/services", {
   schema: {
