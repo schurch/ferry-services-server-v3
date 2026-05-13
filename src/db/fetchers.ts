@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import type { Location, RailDeparture, ScrapedService, VesselPosition, WeatherObservation } from "../types/fetchers.js";
+import type { ServiceStatus } from "../types/api.js";
 
 export function listLocations(db: Database.Database): Location[] {
   return db.prepare(`
@@ -92,6 +93,46 @@ export function listServiceIdsForOrganisation(db: Database.Database, organisatio
     WHERE organisation_id = ?
     ORDER BY service_id
   `).all(organisationId) as Array<{ service_id: number }>).map((row) => row.service_id);
+}
+
+export function listServicesById(db: Database.Database, serviceIds: number[]): Map<number, ScrapedService> {
+  if (serviceIds.length === 0) {
+    return new Map();
+  }
+
+  const rows = db.prepare(`
+    SELECT service_id, area, route, status, additional_info, disruption_reason, organisation_id, last_updated_date, updated
+    FROM services
+    WHERE service_id = ?
+  `);
+
+  return new Map(serviceIds.flatMap((serviceId) => {
+    const row = rows.get(serviceId) as {
+      service_id: number;
+      area: string;
+      route: string;
+      status: ServiceStatus;
+      additional_info: string | null;
+      disruption_reason: string | null;
+      organisation_id: number;
+      last_updated_date: string | null;
+      updated: string;
+    } | undefined;
+
+    return row
+      ? [[row.service_id, {
+        serviceId: row.service_id,
+        area: row.area,
+        route: row.route,
+        status: row.status,
+        additionalInfo: row.additional_info ?? undefined,
+        disruptionReason: row.disruption_reason ?? undefined,
+        organisationId: row.organisation_id,
+        lastUpdatedDate: row.last_updated_date ?? undefined,
+        updated: row.updated
+      }]]
+      : [];
+  }));
 }
 
 export function saveServices(db: Database.Database, services: ScrapedService[]): void {

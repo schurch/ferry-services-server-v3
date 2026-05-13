@@ -1,8 +1,9 @@
 import "dotenv/config";
 import { HTMLElement, NodeType, parse } from "node-html-parser";
 import { marked } from "marked";
-import { hideServices, listServiceIdsForOrganisation, saveServices } from "../db/fetchers.js";
+import { hideServices, listServicesById, listServiceIdsForOrganisation, saveServices } from "../db/fetchers.js";
 import { openDatabase } from "../db/database.js";
+import { notifyForServiceStatusChanges } from "../push/notifications.js";
 import type { ScrapedService } from "../types/fetchers.js";
 import type { ServiceStatus } from "../types/api.js";
 
@@ -345,8 +346,10 @@ async function main(): Promise<void> {
       try {
         console.log(`Fetching ${scraper.name} services`);
         const services = await scraper.scrape();
+        const oldServices = listServicesById(db, services.map((service) => service.serviceId));
         saveServices(db, services);
         scraper.afterSave?.(services);
+        await notifyForServiceStatusChanges(db, services, oldServices);
       } catch (error) {
         process.exitCode = 1;
         console.error(`Skipping ${scraper.name}: ${error instanceof Error ? error.message : String(error)}`);
