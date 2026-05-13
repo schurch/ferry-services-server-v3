@@ -15,7 +15,8 @@
     "migrate": "node dist/db/migrate.js",
     "scrape": "node dist/jobs/scraper.js",
     "fetch:weather": "node dist/jobs/weather-fetcher.js",
-    "fetch:vessels": "node dist/jobs/vessel-fetcher.js"
+    "fetch:vessels": "node dist/jobs/vessel-fetcher.js",
+    "fetch:rail": "node dist/jobs/rail-departure-fetcher.js"
   },
   "dependencies": {
     "@fastify/static": "^9.1.3",

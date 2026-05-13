@@ -82,9 +82,11 @@ The fetchers are also available through npm scripts after a build:
 npm run scrape
 npm run fetch:weather
 npm run fetch:vessels
+npm run fetch:rail
 ```
 
 Weather fetching requires `OPENWEATHERMAP_APPID`.
+Rail departure fetching requires `RAIL_DATA_API_KEY`.
 
 ## Deployment Model
 
