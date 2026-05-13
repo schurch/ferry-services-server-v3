@@ -8,6 +8,9 @@ const envSchema = Type.Object({
   DATABASE_PATH: Type.Optional(Type.String({ minLength: 1 })),
   OPENWEATHERMAP_APPID: Type.Optional(Type.String()),
   RAIL_DATA_API_KEY: Type.Optional(Type.String()),
+  TRAVELLINE_FTP_ADDRESS: Type.Optional(Type.String()),
+  TRAVELLINE_FTP_USERNAME: Type.Optional(Type.String()),
+  TRAVELLINE_FTP_PASSWORD: Type.Optional(Type.String()),
   APNS_TEAM_ID: Type.Optional(Type.String()),
   APNS_KEY_ID: Type.Optional(Type.String()),
   APNS_BUNDLE_ID: Type.Optional(Type.String()),
@@ -43,6 +46,9 @@ const env = Value.Parse(envSchema, {
   DATABASE_PATH: process.env.DATABASE_PATH,
   OPENWEATHERMAP_APPID: process.env.OPENWEATHERMAP_APPID,
   RAIL_DATA_API_KEY: process.env.RAIL_DATA_API_KEY,
+  TRAVELLINE_FTP_ADDRESS: process.env.TRAVELLINE_FTP_ADDRESS,
+  TRAVELLINE_FTP_USERNAME: process.env.TRAVELLINE_FTP_USERNAME,
+  TRAVELLINE_FTP_PASSWORD: process.env.TRAVELLINE_FTP_PASSWORD,
   APNS_TEAM_ID: process.env.APNS_TEAM_ID,
   APNS_KEY_ID: process.env.APNS_KEY_ID,
   APNS_BUNDLE_ID: process.env.APNS_BUNDLE_ID,
@@ -59,6 +65,11 @@ export const config = {
   databasePath: env.DATABASE_PATH ?? "./data/ferry-services.sqlite3",
   openWeatherMapAppId: env.OPENWEATHERMAP_APPID ?? null,
   railDataApiKey: env.RAIL_DATA_API_KEY ?? null,
+  travelineFtp: {
+    address: env.TRAVELLINE_FTP_ADDRESS ?? null,
+    username: env.TRAVELLINE_FTP_USERNAME ?? null,
+    password: env.TRAVELLINE_FTP_PASSWORD ?? null
+  },
   apns: {
     teamId: env.APNS_TEAM_ID ?? null,
     keyId: env.APNS_KEY_ID ?? null,

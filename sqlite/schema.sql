@@ -124,6 +124,136 @@ CREATE TABLE IF NOT EXISTS timetable_document_services (
     PRIMARY KEY (timetable_document_id, service_id)
 );
 
+CREATE TABLE IF NOT EXISTS transxchange_documents (
+    document_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_path TEXT NOT NULL,
+    source_file_name TEXT NOT NULL,
+    source_version_key TEXT NOT NULL,
+    source_creation_datetime TEXT NULL,
+    source_modification_datetime TEXT NULL,
+    imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS transxchange_stop_points (
+    document_id INTEGER NOT NULL REFERENCES transxchange_documents (document_id) ON DELETE CASCADE,
+    stop_point_ref TEXT NOT NULL,
+    common_name TEXT NOT NULL,
+    PRIMARY KEY (document_id, stop_point_ref)
+);
+
+CREATE TABLE IF NOT EXISTS transxchange_services (
+    document_id INTEGER NOT NULL REFERENCES transxchange_documents (document_id) ON DELETE CASCADE,
+    service_code TEXT NOT NULL,
+    operator_ref TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    description TEXT NOT NULL,
+    origin TEXT NOT NULL,
+    destination TEXT NOT NULL,
+    start_date TEXT NULL,
+    end_date TEXT NULL,
+    PRIMARY KEY (document_id, service_code)
+);
+
+CREATE TABLE IF NOT EXISTS transxchange_lines (
+    document_id INTEGER NOT NULL REFERENCES transxchange_documents (document_id) ON DELETE CASCADE,
+    line_id TEXT NOT NULL,
+    service_code TEXT NOT NULL,
+    line_name TEXT NOT NULL,
+    PRIMARY KEY (document_id, line_id)
+);
+
+CREATE TABLE IF NOT EXISTS transxchange_journey_patterns (
+    document_id INTEGER NOT NULL REFERENCES transxchange_documents (document_id) ON DELETE CASCADE,
+    journey_pattern_id TEXT NOT NULL,
+    service_code TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    PRIMARY KEY (document_id, journey_pattern_id)
+);
+
+CREATE TABLE IF NOT EXISTS transxchange_journey_pattern_sections (
+    document_id INTEGER NOT NULL REFERENCES transxchange_documents (document_id) ON DELETE CASCADE,
+    journey_pattern_id TEXT NOT NULL,
+    section_ref TEXT NOT NULL,
+    section_order INTEGER NOT NULL,
+    PRIMARY KEY (document_id, journey_pattern_id, section_order)
+);
+
+CREATE TABLE IF NOT EXISTS transxchange_journey_pattern_timing_links (
+    document_id INTEGER NOT NULL REFERENCES transxchange_documents (document_id) ON DELETE CASCADE,
+    journey_pattern_timing_link_id TEXT NOT NULL,
+    journey_pattern_section_ref TEXT NOT NULL,
+    sort_order INTEGER NOT NULL,
+    from_stop_point_ref TEXT NOT NULL,
+    from_activity TEXT NOT NULL,
+    from_timing_status TEXT NOT NULL,
+    to_stop_point_ref TEXT NOT NULL,
+    to_activity TEXT NOT NULL,
+    to_timing_status TEXT NOT NULL,
+    route_link_ref TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    run_seconds INTEGER NOT NULL,
+    from_wait_seconds INTEGER NOT NULL,
+    PRIMARY KEY (document_id, journey_pattern_timing_link_id)
+);
+
+CREATE TABLE IF NOT EXISTS transxchange_vehicle_journeys (
+    document_id INTEGER NOT NULL REFERENCES transxchange_documents (document_id) ON DELETE CASCADE,
+    vehicle_journey_code TEXT NOT NULL,
+    service_code TEXT NOT NULL,
+    line_id TEXT NOT NULL,
+    journey_pattern_id TEXT NOT NULL,
+    operator_ref TEXT NOT NULL,
+    departure_time TEXT NOT NULL,
+    note TEXT NOT NULL,
+    note_code TEXT NOT NULL,
+    PRIMARY KEY (document_id, vehicle_journey_code)
+);
+
+CREATE TABLE IF NOT EXISTS transxchange_vehicle_journey_timing_links (
+    document_id INTEGER NOT NULL REFERENCES transxchange_documents (document_id) ON DELETE CASCADE,
+    vehicle_journey_code TEXT NOT NULL,
+    journey_pattern_timing_link_id TEXT NOT NULL,
+    sort_order INTEGER NOT NULL,
+    PRIMARY KEY (document_id, vehicle_journey_code, sort_order)
+);
+
+CREATE TABLE IF NOT EXISTS transxchange_vehicle_journey_days (
+    document_id INTEGER NOT NULL REFERENCES transxchange_documents (document_id) ON DELETE CASCADE,
+    vehicle_journey_code TEXT NOT NULL,
+    day_rule TEXT NOT NULL,
+    PRIMARY KEY (document_id, vehicle_journey_code, day_rule)
+);
+
+CREATE TABLE IF NOT EXISTS transxchange_vehicle_journey_week_of_month_rules (
+    document_id INTEGER NOT NULL REFERENCES transxchange_documents (document_id) ON DELETE CASCADE,
+    vehicle_journey_code TEXT NOT NULL,
+    week_of_month_rule TEXT NOT NULL,
+    PRIMARY KEY (document_id, vehicle_journey_code, week_of_month_rule)
+);
+
+CREATE TABLE IF NOT EXISTS transxchange_vehicle_journey_date_ranges (
+    document_id INTEGER NOT NULL REFERENCES transxchange_documents (document_id) ON DELETE CASCADE,
+    vehicle_journey_code TEXT NOT NULL,
+    range_type TEXT NOT NULL CHECK (range_type IN ('days_of_operation', 'days_of_non_operation', 'serviced_organisation_days_of_operation', 'serviced_organisation_days_of_non_operation')),
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    PRIMARY KEY (document_id, vehicle_journey_code, range_type, start_date, end_date)
+);
+
+CREATE TABLE IF NOT EXISTS transxchange_vehicle_journey_bank_holiday_rules (
+    document_id INTEGER NOT NULL REFERENCES transxchange_documents (document_id) ON DELETE CASCADE,
+    vehicle_journey_code TEXT NOT NULL,
+    rule_type TEXT NOT NULL CHECK (rule_type IN ('operation', 'non_operation')),
+    bank_holiday_rule TEXT NOT NULL,
+    PRIMARY KEY (document_id, vehicle_journey_code, rule_type, bank_holiday_rule)
+);
+
+CREATE TABLE IF NOT EXISTS transxchange_service_mappings (
+    service_id INTEGER NOT NULL REFERENCES services (service_id) ON DELETE CASCADE,
+    service_code TEXT NOT NULL,
+    PRIMARY KEY (service_id, service_code)
+);
+
 CREATE INDEX IF NOT EXISTS services_organisation_id_idx ON services (organisation_id);
 CREATE INDEX IF NOT EXISTS services_visible_idx ON services (visible);
 CREATE INDEX IF NOT EXISTS installations_device_type_idx ON installations (device_type);
@@ -135,3 +265,8 @@ CREATE INDEX IF NOT EXISTS rail_departures_location_id_idx ON rail_departures (l
 CREATE INDEX IF NOT EXISTS rail_departures_created_idx ON rail_departures (created);
 CREATE INDEX IF NOT EXISTS timetable_documents_organisation_id_idx ON timetable_documents (organisation_id);
 CREATE INDEX IF NOT EXISTS timetable_document_services_service_id_idx ON timetable_document_services (service_id);
+CREATE INDEX IF NOT EXISTS transxchange_services_service_code_idx ON transxchange_services (service_code);
+CREATE INDEX IF NOT EXISTS transxchange_services_mode_idx ON transxchange_services (mode);
+CREATE INDEX IF NOT EXISTS transxchange_timing_links_from_to_idx ON transxchange_journey_pattern_timing_links (from_stop_point_ref, to_stop_point_ref);
+CREATE INDEX IF NOT EXISTS transxchange_vehicle_journeys_service_code_idx ON transxchange_vehicle_journeys (service_code);
+CREATE INDEX IF NOT EXISTS transxchange_service_mappings_service_code_idx ON transxchange_service_mappings (service_code);

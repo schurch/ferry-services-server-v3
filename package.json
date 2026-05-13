@@ -17,7 +17,8 @@
     "fetch:weather": "node dist/jobs/weather-fetcher.js",
     "fetch:vessels": "node dist/jobs/vessel-fetcher.js",
     "fetch:rail": "node dist/jobs/rail-departure-fetcher.js",
-    "fetch:timetable-documents": "node dist/jobs/timetable-document-fetcher.js"
+    "fetch:timetable-documents": "node dist/jobs/timetable-document-fetcher.js",
+    "ingest:transxchange": "node dist/jobs/transxchange-ingester.js"
   },
   "dependencies": {
     "@fastify/static": "^9.1.3",

@@ -84,10 +84,13 @@ npm run fetch:weather
 npm run fetch:vessels
 npm run fetch:rail
 npm run fetch:timetable-documents
+npm run ingest:transxchange
+npm run ingest:transxchange -- /path/to/extracted/S # local fixture/feed override
 ```
 
 Weather fetching requires `OPENWEATHERMAP_APPID`.
 Rail departure fetching requires `RAIL_DATA_API_KEY`.
+TransXChange ingest requires `TRAVELLINE_FTP_ADDRESS`, `TRAVELLINE_FTP_USERNAME`, and `TRAVELLINE_FTP_PASSWORD` when no local directory is passed. It downloads `S.zip`, extracts it under `data/transxchange-ingest`, and stores the normalized TransXChange data.
 
 ## Deployment Model
 
@@ -127,7 +130,7 @@ Use one database command for local setup and production deploys:
 npm run migrate
 ```
 
-It creates the database if needed, applies pending migrations, and loads reference seed data when the database is empty. The baseline intentionally omits the v2 `tx2_*` TransXChange tables. The v3 TransXChange importer should define new tables without carrying the v2-specific table prefix or import model forward.
+It creates the database if needed, applies pending migrations, and loads reference seed data when the database is empty. The baseline uses v3 TransXChange tables without carrying the v2-specific `tx2_*` table prefix forward.
 
 SQLite data should live outside release directories:
 
