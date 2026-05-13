@@ -1,4 +1,5 @@
 import "dotenv/config";
+import * as Sentry from "@sentry/node";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import { Type } from "@sinclair/typebox";
@@ -9,6 +10,7 @@ import { etagForJson, getService, listInstallationServices, listServices, listTi
 import { openDatabase } from "../db/database.js";
 import { addInstallationService, deleteInstallationService, getPushStatus, updatePushStatus, upsertInstallation } from "../db/installations.js";
 import { defaultSnapshotMetadataPath, defaultSnapshotPath, readOfflineSnapshotMetadata } from "../offline/snapshot.js";
+import { sentryEnabled } from "../sentry.js";
 import { serviceToApi, timetableDocumentToApi, vesselToApi } from "./wire.js";
 
 const app = Fastify({ logger: true });
@@ -355,6 +357,12 @@ app.get("/", {
   ok: true,
   message: "ferry-services-server-v3 is running"
 }));
+
+if (sentryEnabled) {
+  Sentry.setupFastifyErrorHandler(app, {
+    shouldHandleError: (_error, _request, reply) => reply.statusCode >= 500
+  });
+}
 
 app.addHook("onClose", async () => {
   db.close();

@@ -96,6 +96,21 @@ TransXChange ingest requires `TRAVELLINE_FTP_ADDRESS`, `TRAVELLINE_FTP_USERNAME`
 
 Offline snapshot generation writes `offline/snapshot.sqlite3` and `offline/snapshot.meta.json`. The API serves the SQLite file from `/api/offline/snapshot.sqlite3` with ETag and Last-Modified headers.
 
+Sentry is optional. The v3 services use the same project-specific DSN environment variables as v2 where possible:
+
+```text
+SERVER_SENTRY_DSN
+SCRAPER_SENTRY_DSN
+WEATHER_FETCHER_SENTRY_DSN
+VESSEL_FETCHER_SENTRY_DSN
+RAIL_DEPARTURE_FETCHER_SENTRY_DSN
+TIMETABLE_DOCUMENT_SCRAPER_SENTRY_DSN
+TRANSXCHANGE_INGESTER_SENTRY_DSN
+OFFLINE_SNAPSHOT_GENERATOR_SENTRY_DSN
+```
+
+`SENTRY_DSN` is still accepted as a fallback for local development. `SENTRY_RELEASE` and `SENTRY_TRACES_SAMPLE_RATE` are optional; the trace sample rate defaults to `0.1` when Sentry is enabled. Sentry environment is inferred from `NODE_ENV`: `production` when `NODE_ENV=production`, otherwise `development`. Frontend requests can be correlated when the frontend Sentry SDK sends the standard `sentry-trace` and `baggage` headers.
+
 ## Deployment Model
 
 CI owns build and test:
