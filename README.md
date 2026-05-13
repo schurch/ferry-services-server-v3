@@ -109,7 +109,7 @@ TRANSXCHANGE_INGESTER_SENTRY_DSN
 OFFLINE_SNAPSHOT_GENERATOR_SENTRY_DSN
 ```
 
-`SENTRY_DSN` is still accepted as a fallback for local development. `SENTRY_RELEASE` and `SENTRY_TRACES_SAMPLE_RATE` are optional; the trace sample rate defaults to `0.1` when Sentry is enabled. Sentry environment is inferred from `NODE_ENV`: `production` when `NODE_ENV=production`, otherwise `development`. Frontend requests can be correlated when the frontend Sentry SDK sends the standard `sentry-trace` and `baggage` headers.
+`SENTRY_TRACES_SAMPLE_RATE` is optional; the trace sample rate defaults to `0.1` when Sentry is enabled. Sentry environment is inferred from `NODE_ENV`: `production` when `NODE_ENV=production`, otherwise `development`. Frontend requests can be correlated when the frontend Sentry SDK sends the standard `sentry-trace` and `baggage` headers.
 
 ## Deployment Model
 

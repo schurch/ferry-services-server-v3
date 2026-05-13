@@ -48,7 +48,7 @@ function serviceDsn(service: SentryService): string | null {
   }
 }
 
-const dsn = serviceDsn(sentryService) ?? config.sentry.dsn;
+const dsn = serviceDsn(sentryService);
 
 export const sentryEnabled = dsn !== null;
 
@@ -56,7 +56,6 @@ if (dsn) {
   Sentry.init({
     dsn,
     environment: config.sentry.environment,
-    release: config.sentry.release ?? undefined,
     tracesSampleRate: config.sentry.tracesSampleRate ?? 0.1,
     initialScope: {
       tags: {

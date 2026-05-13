@@ -11,7 +11,6 @@ const envSchema = Type.Object({
   TRAVELLINE_FTP_ADDRESS: Type.Optional(Type.String()),
   TRAVELLINE_FTP_USERNAME: Type.Optional(Type.String()),
   TRAVELLINE_FTP_PASSWORD: Type.Optional(Type.String()),
-  SENTRY_DSN: Type.Optional(Type.String()),
   SERVER_SENTRY_DSN: Type.Optional(Type.String()),
   SCRAPER_SENTRY_DSN: Type.Optional(Type.String()),
   WEATHER_FETCHER_SENTRY_DSN: Type.Optional(Type.String()),
@@ -20,7 +19,6 @@ const envSchema = Type.Object({
   TIMETABLE_DOCUMENT_SCRAPER_SENTRY_DSN: Type.Optional(Type.String()),
   TRANSXCHANGE_INGESTER_SENTRY_DSN: Type.Optional(Type.String()),
   OFFLINE_SNAPSHOT_GENERATOR_SENTRY_DSN: Type.Optional(Type.String()),
-  SENTRY_RELEASE: Type.Optional(Type.String()),
   SENTRY_TRACES_SAMPLE_RATE: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
   APNS_TEAM_ID: Type.Optional(Type.String()),
   APNS_KEY_ID: Type.Optional(Type.String()),
@@ -69,7 +67,6 @@ const env = Value.Parse(envSchema, {
   TRAVELLINE_FTP_ADDRESS: process.env.TRAVELLINE_FTP_ADDRESS,
   TRAVELLINE_FTP_USERNAME: process.env.TRAVELLINE_FTP_USERNAME,
   TRAVELLINE_FTP_PASSWORD: process.env.TRAVELLINE_FTP_PASSWORD,
-  SENTRY_DSN: process.env.SENTRY_DSN,
   SERVER_SENTRY_DSN: process.env.SERVER_SENTRY_DSN,
   SCRAPER_SENTRY_DSN: process.env.SCRAPER_SENTRY_DSN,
   WEATHER_FETCHER_SENTRY_DSN: process.env.WEATHER_FETCHER_SENTRY_DSN,
@@ -78,7 +75,6 @@ const env = Value.Parse(envSchema, {
   TIMETABLE_DOCUMENT_SCRAPER_SENTRY_DSN: process.env.TIMETABLE_DOCUMENT_SCRAPER_SENTRY_DSN,
   TRANSXCHANGE_INGESTER_SENTRY_DSN: process.env.TRANSXCHANGE_INGESTER_SENTRY_DSN,
   OFFLINE_SNAPSHOT_GENERATOR_SENTRY_DSN: process.env.OFFLINE_SNAPSHOT_GENERATOR_SENTRY_DSN,
-  SENTRY_RELEASE: process.env.SENTRY_RELEASE,
   SENTRY_TRACES_SAMPLE_RATE: parseOptionalNumber(process.env.SENTRY_TRACES_SAMPLE_RATE),
   APNS_TEAM_ID: process.env.APNS_TEAM_ID,
   APNS_KEY_ID: process.env.APNS_KEY_ID,
@@ -102,7 +98,6 @@ export const config = {
     password: env.TRAVELLINE_FTP_PASSWORD ?? null
   },
   sentry: {
-    dsn: env.SENTRY_DSN ?? null,
     serverDsn: env.SERVER_SENTRY_DSN ?? null,
     scraperDsn: env.SCRAPER_SENTRY_DSN ?? null,
     weatherFetcherDsn: env.WEATHER_FETCHER_SENTRY_DSN ?? null,
@@ -112,7 +107,6 @@ export const config = {
     transxchangeIngesterDsn: env.TRANSXCHANGE_INGESTER_SENTRY_DSN ?? null,
     offlineSnapshotGeneratorDsn: env.OFFLINE_SNAPSHOT_GENERATOR_SENTRY_DSN ?? null,
     environment: (env.NODE_ENV ?? "development") === "production" ? "production" : "development",
-    release: env.SENTRY_RELEASE ?? null,
     tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE
   },
   apns: {
