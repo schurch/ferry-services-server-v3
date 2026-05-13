@@ -83,6 +83,7 @@ npm run scrape
 npm run fetch:weather
 npm run fetch:vessels
 npm run fetch:rail
+npm run fetch:timetable-documents
 ```
 
 Weather fetching requires `OPENWEATHERMAP_APPID`.

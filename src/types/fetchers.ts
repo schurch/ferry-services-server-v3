@@ -36,6 +36,17 @@ export type RailDeparture = {
   locationId: number;
 };
 
+export type ScrapedTimetableDocument = {
+  organisationId: number;
+  serviceIds: number[];
+  title: string;
+  sourceUrl: string;
+  contentHash?: string;
+  contentType?: string;
+  contentLength?: number;
+  lastSeenAt: string;
+};
+
 export type ScrapedService = {
   serviceId: number;
   area: string;
