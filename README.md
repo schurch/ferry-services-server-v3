@@ -84,6 +84,7 @@ npm run fetch:weather
 npm run fetch:vessels
 npm run fetch:rail
 npm run fetch:timetable-documents
+npm run generate:offline-snapshot
 npm run ingest:transxchange
 npm run ingest:transxchange -- /path/to/extracted/S # local fixture/feed override
 npm run ingest:transxchange -- ./S.zip # local downloaded ZIP override
@@ -92,6 +93,8 @@ npm run ingest:transxchange -- ./S.zip # local downloaded ZIP override
 Weather fetching requires `OPENWEATHERMAP_APPID`.
 Rail departure fetching requires `RAIL_DATA_API_KEY`.
 TransXChange ingest requires `TRAVELLINE_FTP_ADDRESS`, `TRAVELLINE_FTP_USERNAME`, and `TRAVELLINE_FTP_PASSWORD` when no local directory or ZIP file is passed. It downloads and extracts `S.zip` temporarily under `data/transxchange-ingest`, stores the normalized TransXChange data, and removes the temporary ingest directory. To rerun without FTP, pass a ZIP file stored outside `data/transxchange-ingest`.
+
+Offline snapshot generation writes `offline/snapshot.sqlite3` and `offline/snapshot.meta.json`. The API serves the SQLite file from `/api/offline/snapshot.sqlite3` with ETag and Last-Modified headers.
 
 ## Deployment Model
 

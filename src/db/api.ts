@@ -94,7 +94,7 @@ type TimetableDocumentServiceLinkRow = {
   service_id: number;
 };
 
-type LocationDepartureRow = {
+export type LocationDepartureRow = {
   from_location_id: number;
   to_location_id: number;
   to_location_name: string;
@@ -165,7 +165,7 @@ function isRecent(timestamp: string, now = new Date()): boolean {
   return now.getTime() - parseSqlTimestamp(timestamp).getTime() < 30 * 60 * 1000;
 }
 
-function londonLocalTimestampResponse(timestamp: string): string {
+export function londonLocalTimestampResponse(timestamp: string): string {
   const localUtcGuess = new Date(`${timestamp.replace(" ", "T")}Z`);
   const formatter = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Europe/London",
@@ -564,7 +564,7 @@ function departureQueryParams(queryDate: string, serviceId: number): Array<strin
   ];
 }
 
-function listLocationDepartureRows(db: Database.Database, serviceId: number, queryDate: string): LocationDepartureRow[] {
+export function listLocationDepartureRows(db: Database.Database, serviceId: number, queryDate: string): LocationDepartureRow[] {
   const rows = db.prepare(`
     WITH constants(query_date) AS (
         SELECT ? AS query_date

@@ -3,10 +3,12 @@ import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import { Type } from "@sinclair/typebox";
 import Fastify from "fastify";
+import fs from "node:fs";
 import { config } from "../config/config.js";
 import { etagForJson, getService, listInstallationServices, listServices, listTimetableDocuments, listVessels } from "../db/api.js";
 import { openDatabase } from "../db/database.js";
 import { addInstallationService, deleteInstallationService, getPushStatus, updatePushStatus, upsertInstallation } from "../db/installations.js";
+import { defaultSnapshotMetadataPath, defaultSnapshotPath, readOfflineSnapshotMetadata } from "../offline/snapshot.js";
 import { serviceToApi, timetableDocumentToApi, vesselToApi } from "./wire.js";
 
 const app = Fastify({ logger: true });
@@ -122,7 +124,7 @@ app.get("/api/services", {
 app.get("/api/services/:serviceID", {
   schema: {
     summary: "Get service detail",
-    description: "Returns one visible service. departuresDate is accepted for API compatibility; scheduled ferry departures will be added with the v3 TransXChange importer.",
+    description: "Returns one visible service. Pass departuresDate to include scheduled ferry departures for that date.",
     tags: ["Ferry Services API"],
     params: ServiceIDParams,
     querystring: ServiceDetailQuery,
@@ -312,6 +314,34 @@ app.get("/api/timetable-documents", {
   }
 
   return documents;
+});
+
+app.get("/api/offline/snapshot.sqlite3", {
+  schema: {
+    summary: "Download offline SQLite snapshot",
+    description: "Returns the generated offline timetable SQLite database. Clients should send If-None-Match with the stored ETag; unchanged snapshots return 304 Not Modified.",
+    tags: ["Ferry Services API"],
+    response: {
+      200: Type.Any(),
+      304: Type.Null(),
+      404: ErrorResponse
+    }
+  }
+}, async (request, reply) => {
+  const metadata = readOfflineSnapshotMetadata(defaultSnapshotMetadataPath);
+  if (!metadata || !fs.existsSync(defaultSnapshotPath)) {
+    return reply.code(404).send({ error: "Not Found", message: "Offline snapshot has not been generated" });
+  }
+
+  reply.header("Cache-Control", "public, max-age=900, stale-while-revalidate=86400");
+  reply.header("ETag", metadata.etag);
+  reply.header("Last-Modified", new Date(metadata.generated_at).toUTCString());
+
+  if (request.headers["if-none-match"]?.split(",").map((value) => value.trim().replace(/^W\//, "")).includes(metadata.etag)) {
+    return reply.code(304).send();
+  }
+
+  return reply.type("application/vnd.sqlite3").send(fs.createReadStream(defaultSnapshotPath));
 });
 
 app.get("/", {

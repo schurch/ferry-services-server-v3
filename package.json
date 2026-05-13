@@ -18,6 +18,7 @@
     "fetch:vessels": "node dist/jobs/vessel-fetcher.js",
     "fetch:rail": "node dist/jobs/rail-departure-fetcher.js",
     "fetch:timetable-documents": "node dist/jobs/timetable-document-fetcher.js",
+    "generate:offline-snapshot": "node dist/jobs/offline-snapshot-generator.js",
     "ingest:transxchange": "node dist/jobs/transxchange-ingester.js"
   },
   "dependencies": {
