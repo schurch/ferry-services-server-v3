@@ -113,6 +113,14 @@ function parseSqlTimestamp(timestamp: string): Date {
   return new Date(`${timestamp.replace(" ", "T")}Z`);
 }
 
+function timeWithSeconds(time: string): string {
+  return /^\d{2}:\d{2}$/.test(time) ? `${time}:00` : time;
+}
+
+function utcIsoResponse(datePart: string, timePart: string): string {
+  return new Date(`${datePart}T${timePart}Z`).toISOString();
+}
+
 function timestampResponse(timestamp: string): string {
   return parseSqlTimestamp(timestamp).toISOString();
 }
@@ -361,7 +369,8 @@ function createLocationLookup(
     WHERE datetime(created) > datetime('now', '-5 minutes')
     ORDER BY scheduled_departure_time
   `).all() as RailDepartureRow[]) {
-    const departure = `${today}T${row.scheduled_departure_time.replace(" ", "T").split("T").pop()}Z`;
+    const departureTime = timeWithSeconds(row.scheduled_departure_time.replace(" ", "T").split("T").pop() ?? "");
+    const departure = utcIsoResponse(today, departureTime);
     if (!nextRailByLocation.has(row.location_id) && new Date(departure) > now) {
       nextRailByLocation.set(row.location_id, {
         from: row.departure_name,
