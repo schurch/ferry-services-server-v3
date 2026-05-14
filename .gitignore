@@ -2,6 +2,8 @@ node_modules/
 dist/
 /offline/
 .env
+secrets/
+*.zip
 *.sqlite
 *.sqlite3
 *.sqlite3-shm
