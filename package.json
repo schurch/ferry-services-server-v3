@@ -11,7 +11,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node --import ./dist/sentry.js dist/api/server.js",
-    "test": "node --test",
+    "test": "tsx --test \"test/**/*.test.ts\"",
     "migrate": "node dist/db/migrate.js",
     "scrape": "node --import ./dist/sentry.js dist/jobs/scraper.js",
     "fetch:weather": "node --import ./dist/sentry.js dist/jobs/weather-fetcher.js",

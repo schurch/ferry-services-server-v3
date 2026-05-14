@@ -2,6 +2,7 @@ import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
+import { pathToFileURL } from "node:url";
 import { Client } from "basic-ftp";
 import { HTMLElement, parse } from "node-html-parser";
 import * as yauzl from "yauzl";
@@ -556,24 +557,36 @@ async function prepareIngestDirectory(): Promise<PreparedIngestDirectory> {
   return { directory: extractDirectory, cleanupWorkingDirectory: true };
 }
 
+export function parseTransxchangeDirectory(directory: string): TransxchangeDocument[] {
+  const files = findXmlFiles(directory);
+  console.log(`TransXChange files discovered: ${files.length}`);
+
+  const documents: TransxchangeDocument[] = [];
+  let skipped = 0;
+  for (const [index, file] of files.entries()) {
+    const document = parseDocument(file);
+    if (document) documents.push(document);
+    else skipped += 1;
+    if (index === 0 || (index + 1) % 50 === 0 || index === files.length - 1) {
+      console.log(`TransXChange progress ${index + 1}/${files.length}: ferry_documents=${documents.length}, skipped=${skipped}`);
+    }
+  }
+
+  return documents;
+}
+
+export function ingestTransxchangeDirectory(db: import("better-sqlite3").Database, directory: string): void {
+  const documents = parseTransxchangeDirectory(directory);
+  replaceTransxchangeData(db, documents);
+  console.log(`TransXChange ingest complete: ferry_documents=${documents.length}`);
+}
+
 async function main(): Promise<void> {
   let cleanupWorkingDirectory = shouldCleanupWorkingDirectory();
   try {
     const prepared = await prepareIngestDirectory();
     cleanupWorkingDirectory = prepared.cleanupWorkingDirectory;
-    const files = findXmlFiles(prepared.directory);
-    console.log(`TransXChange files discovered: ${files.length}`);
-
-    const documents: TransxchangeDocument[] = [];
-    let skipped = 0;
-    for (const [index, file] of files.entries()) {
-      const document = parseDocument(file);
-      if (document) documents.push(document);
-      else skipped += 1;
-      if (index === 0 || (index + 1) % 50 === 0 || index === files.length - 1) {
-        console.log(`TransXChange progress ${index + 1}/${files.length}: ferry_documents=${documents.length}, skipped=${skipped}`);
-      }
-    }
+    const documents = parseTransxchangeDirectory(prepared.directory);
 
     const db = openDatabase();
     try {
@@ -581,7 +594,7 @@ async function main(): Promise<void> {
     } finally {
       db.close();
     }
-    console.log(`TransXChange ingest complete: ferry_documents=${documents.length}, skipped=${skipped}`);
+    console.log(`TransXChange ingest complete: ferry_documents=${documents.length}`);
   } finally {
     if (cleanupWorkingDirectory) {
       fs.rmSync(ingestWorkingDirectory, { recursive: true, force: true });
@@ -589,4 +602,6 @@ async function main(): Promise<void> {
   }
 }
 
-await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}
