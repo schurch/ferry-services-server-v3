@@ -39,7 +39,7 @@ describe("push notification payloads", () => {
     assert.equal(shouldNotifyForServiceStatusChange({ ...baseService, status: 1 }, null), false);
   });
 
-  it("keeps the v2 iOS and Android payload contract", () => {
+  it("keeps the mobile iOS and Android payload contract", () => {
     const disrupted = { ...baseService, status: 1 as const };
 
     assert.equal(

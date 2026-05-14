@@ -4,6 +4,7 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { pathToFileURL } from "node:url";
 import { Client } from "basic-ftp";
+import type Database from "better-sqlite3";
 import { HTMLElement, parse } from "node-html-parser";
 import * as yauzl from "yauzl";
 import { config } from "../config/config.js";
@@ -545,7 +546,7 @@ async function prepareIngestDirectory(): Promise<PreparedIngestDirectory> {
 
   const ftp = config.travelineFtp;
   if (!ftp.address || !ftp.username || !ftp.password) {
-    throw new Error("Usage: node dist/jobs/transxchange-ingester.js <directory-or-zip> or set TRAVELLINE_FTP_ADDRESS, TRAVELLINE_FTP_USERNAME and TRAVELLINE_FTP_PASSWORD");
+    throw new Error("Usage: npm run ingest:transxchange -- <directory-or-zip> or set TRAVELLINE_FTP_ADDRESS, TRAVELLINE_FTP_USERNAME and TRAVELLINE_FTP_PASSWORD");
   }
 
   const zipFilePath = path.join(ingestWorkingDirectory, "S.zip");
@@ -575,7 +576,7 @@ export function parseTransxchangeDirectory(directory: string): TransxchangeDocum
   return documents;
 }
 
-export function ingestTransxchangeDirectory(db: import("better-sqlite3").Database, directory: string): void {
+export function ingestTransxchangeDirectory(db: Database.Database, directory: string): void {
   const documents = parseTransxchangeDirectory(directory);
   replaceTransxchangeData(db, documents);
   console.log(`TransXChange ingest complete: ferry_documents=${documents.length}`);

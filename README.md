@@ -1,6 +1,6 @@
 # ferry-services-server-v3
 
-TypeScript port of the Ferry Services backend.
+TypeScript backend for Scottish Ferry Services.
 
 This repo is intentionally kept simple:
 
@@ -14,22 +14,7 @@ This repo is intentionally kept simple:
 - no Docker
 - CI-built release artifacts deployed to the VPS
 
-## Goals
-
-- Preserve the existing mobile API contract while porting from v2 in small slices.
-- Keep SQLite as the primary data store.
-- Keep background work as one-shot CLI jobs rather than adding a queue system or in-process scheduler.
-- Build in CI, not on the VPS.
-- Call Apple/Google directly for push notifications.
-
-## Non-Goals
-
-- No Dockerfile or Compose setup.
-- No ORM unless plain SQL becomes a clear maintenance problem.
-- No distributed worker platform.
-- No framework-first rewrite.
-
-## Proposed Layout
+## Project Layout
 
 ```text
 ferry-services-server-v3/
@@ -47,12 +32,34 @@ ferry-services-server-v3/
   scripts/        deploy and maintenance scripts
 ```
 
+## Local Setup
+
+```bash
+npm ci
+cp .env.example .env
+npm run build
+npm run migrate
+npm run dev
+```
+
+The development server listens on `HOST`/`PORT`, defaulting to `127.0.0.1:4321`.
+
+Useful checks:
+
+```bash
+npm run typecheck
+npm test
+npm run build
+```
+
+`npm run typecheck` checks both production source and tests. Tests use isolated temporary SQLite databases seeded from `sqlite/migrations/001_initial.sql` and `sqlite/seed.sql`.
+
 ## Runtime Model
 
 The API should run as a normal Node process behind a reverse proxy:
 
 ```bash
-node dist/api/server.js
+npm run start
 ```
 
 API documentation should be available at:
@@ -62,18 +69,19 @@ API documentation should be available at:
 /swagger
 ```
 
-Scheduled work should run as separate one-shot commands, triggered by cron or systemd timers:
+Scheduled work should run as separate one-shot commands:
 
 ```bash
-node dist/jobs/scraper.js
-node dist/jobs/weather-fetcher.js
-node dist/jobs/vessel-fetcher.js
-node dist/jobs/transxchange-ingester.js
-node dist/jobs/rail-departure-fetcher.js
-node dist/jobs/offline-snapshot-generator.js
+npm run scrape
+npm run fetch:weather
+npm run fetch:vessels
+npm run fetch:rail
+npm run fetch:timetable-documents
+npm run ingest:transxchange
+npm run generate:offline-snapshot
 ```
 
-Each job should do one pass of its work, log failures for individual records, and exit. Repetition belongs outside the Node process; for example, run weather roughly every 15 minutes and vessel positions roughly every 5 minutes from systemd timers. This keeps deploys, restarts, and failures simple.
+Each job should do one pass of its work, log failures for individual records, and exit. Repetition stays in systemd timers rather than inside the Node process. This keeps each job restartable on its own and preserves separate journals per job.
 
 The fetchers are also available through npm scripts after a build:
 
@@ -89,13 +97,48 @@ npm run ingest:transxchange -- /path/to/extracted/S # local fixture/feed overrid
 npm run ingest:transxchange -- ./S.zip # local downloaded ZIP override
 ```
 
-Weather fetching requires `OPENWEATHERMAP_APPID`.
-Rail departure fetching requires `RAIL_DATA_API_KEY`.
+Weather fetching requires `OPENWEATHERMAP_APPID`. Rail departure fetching requires `RAIL_DATA_API_KEY`.
+
 TransXChange ingest requires `TRAVELLINE_FTP_ADDRESS`, `TRAVELLINE_FTP_USERNAME`, and `TRAVELLINE_FTP_PASSWORD` when no local directory or ZIP file is passed. It downloads and extracts `S.zip` temporarily under `data/transxchange-ingest`, stores the normalized TransXChange data, and removes the temporary ingest directory. To rerun without FTP, pass a ZIP file stored outside `data/transxchange-ingest`.
 
 Offline snapshot generation writes `offline/snapshot.sqlite3` and `offline/snapshot.meta.json`. The API serves the SQLite file from `/api/offline/snapshot.sqlite3` with ETag and Last-Modified headers.
 
-Sentry is optional. The v3 services use the same project-specific DSN environment variables as v2 where possible:
+## Configuration
+
+Copy `.env.example` to `.env` locally and set production values in `/home/stefanchurch/ferry-services-server-v3/.env` on the VPS. `dotenv` is loaded by every service from the working directory.
+
+Core runtime variables:
+
+```text
+NODE_ENV=production
+HOST=127.0.0.1
+PORT=4321
+DATABASE_PATH=./data/ferry-services.sqlite3
+OPENWEATHERMAP_APPID=
+RAIL_DATA_API_KEY=
+TRAVELLINE_FTP_ADDRESS=
+TRAVELLINE_FTP_USERNAME=
+TRAVELLINE_FTP_PASSWORD=
+```
+
+Direct APNs push requires:
+
+```text
+APNS_TEAM_ID=
+APNS_KEY_ID=
+APNS_BUNDLE_ID=
+APNS_PRIVATE_KEY_PATH=
+APNS_PRODUCTION=true
+```
+
+Direct FCM HTTP v1 push requires:
+
+```text
+FCM_PROJECT_ID=
+GOOGLE_APPLICATION_CREDENTIALS=
+```
+
+Sentry is optional. Each entry point can use its own DSN:
 
 ```text
 SERVER_SENTRY_DSN
@@ -108,7 +151,7 @@ TRANSXCHANGE_INGESTER_SENTRY_DSN
 OFFLINE_SNAPSHOT_GENERATOR_SENTRY_DSN
 ```
 
-`SENTRY_TRACES_SAMPLE_RATE` is optional; the trace sample rate defaults to `0.1` when Sentry is enabled. Sentry environment is inferred from `NODE_ENV`: `production` when `NODE_ENV=production`, otherwise `development`. Frontend requests can be correlated when the frontend Sentry SDK sends the standard `sentry-trace` and `baggage` headers.
+`SENTRY_TRACES_SAMPLE_RATE` is optional. When unset, Sentry uses a trace sample rate of `0.1`. Sentry environment is `production` only when `NODE_ENV=production`; all other values report as `development`.
 
 ## Deployment Model
 
@@ -134,11 +177,28 @@ deploy/
 scripts/
 ```
 
-Deployment uploads the artifact to `/tmp`, unpacks it directly into `/home/stefanchurch/ferry-services-server-v3`, applies migrations and restarts the API. Production dependencies are installed and pruned in CI, then shipped in the artifact, so the VPS does not build or install packages:
+Deployment uploads the artifact to `/tmp`, unpacks it directly into `/home/stefanchurch/ferry-services-server-v3`, applies migrations, and restarts the API. Production dependencies are installed and pruned in CI, then shipped in the artifact, so the VPS does not build or install packages.
+
+The deployed app directory should contain the release files plus persistent local state:
+
+```text
+/home/stefanchurch/ferry-services-server-v3/
+  dist/
+  node_modules/
+  public/
+  sqlite/
+  scripts/
+  deploy/
+  .env
+  data/ferry-services.sqlite3
+  offline/snapshot.sqlite3
+  offline/snapshot.meta.json
+```
+
+Manual deploy from an already-built artifact:
 
 ```bash
-npm run migrate
-systemctl restart ferry-services
+APP_ROOT=/home/stefanchurch/ferry-services-server-v3 scripts/deploy-artifact.sh /tmp/ferry-services-server-v3.tar.gz
 ```
 
 The GitHub Actions deploy job runs this automatically on pushes to `main`. It expects these repository secrets:
@@ -150,11 +210,12 @@ DEPLOY_SSH_KEY
 DEPLOY_PORT # optional, defaults to 22
 ```
 
-Systemd unit templates are stored under `deploy/systemd/`. Install or refresh them manually on the VPS when they change:
+Systemd unit templates are stored under `deploy/systemd/`. They keep the API and each scheduled job separate, but reduce repeated setup by loading the shared app `.env` file and by providing a `ferry-services.target` that groups the whole application. Install or refresh them manually on the VPS when they change:
 
 ```bash
 sudo cp deploy/systemd/* /etc/systemd/system/
 sudo systemctl daemon-reload
+sudo systemctl enable --now ferry-services.target
 sudo systemctl enable --now ferry-services.service
 sudo systemctl enable --now ferry-services-scraper.timer
 sudo systemctl enable --now ferry-services-weather-fetcher.timer
@@ -181,20 +242,7 @@ Use one database command for local setup and production deploys:
 npm run migrate
 ```
 
-It creates the database if needed, applies pending migrations, and loads reference seed data when the database is empty. The baseline uses v3 TransXChange tables without carrying the v2-specific `tx2_*` table prefix forward.
-
-SQLite data should live outside the deployed app directory:
-
-```text
-/home/stefanchurch/ferry-services-server-v3/
-  dist/
-  node_modules/
-  public/
-  sqlite/
-  scripts/
-  .env
-  data/ferry-services.sqlite3
-```
+It creates the database if needed, applies pending migrations, and loads reference seed data when the database is empty.
 
 ## Push Notifications
 
@@ -202,15 +250,6 @@ SQLite data should live outside the deployed app directory:
 - Android: send directly to FCM HTTP v1 using Google service account credentials.
 - Store the app installation, device token, platform, push enabled flag, and delivery metadata locally.
 
-## Porting Order
-
-1. Bootstrap Fastify, config, SQLite, and migrations.
-2. Port read-only API contract: `/api/services`, `/api/services/:serviceID`, `/api/vessels`, `/api/timetable-documents`.
-3. Port installations and direct push registration/delivery.
-4. Port offline SQLite snapshot generation.
-5. Port background fetchers and TransXChange ingest.
-6. Add CI artifact packaging and VPS deployment scripts.
-
 ## Web Dist
 
-The API server preserves the v2 root behavior by serving `public/index.html` at `/` when the web build has been published into `public/`. Static assets under `public/` are served by the API process. API and documentation routes remain available under `/api`, `/openapi.json`, and `/swagger`.
+The API server serves `public/index.html` at `/` when the web build has been published into `public/`. Static assets under `public/` are served by the API process. API and documentation routes remain available under `/api`, `/openapi.json`, and `/swagger`.

@@ -5,7 +5,6 @@ import path from "node:path";
 
 export type TestDatabase = {
   db: Database.Database;
-  path: string;
   cleanup: () => void;
 };
 
@@ -20,14 +19,9 @@ export function createTestDatabase(): TestDatabase {
 
   return {
     db,
-    path: databasePath,
     cleanup: () => {
       db.close();
       fs.rmSync(directory, { recursive: true, force: true });
     }
   };
-}
-
-export function closeAndRemove(testDb: TestDatabase): void {
-  testDb.cleanup();
 }

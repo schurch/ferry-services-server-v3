@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "tsx watch src/api/server.ts",
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "start": "node --import ./dist/sentry.js dist/api/server.js",
     "test": "tsx --test \"test/**/*.test.ts\"",
     "migrate": "node dist/db/migrate.js",
