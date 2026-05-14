@@ -1,0 +1,11 @@
+[Unit]
+Description=Scottish Ferry Services offline snapshot generator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=stefanchurch
+Type=oneshot
+WorkingDirectory=/home/stefanchurch/ferry-services-server-v3
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm run generate:offline-snapshot

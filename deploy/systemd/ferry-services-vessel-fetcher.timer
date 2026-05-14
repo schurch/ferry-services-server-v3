@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Scottish Ferry Services vessel fetcher
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+AccuracySec=30s
+Unit=ferry-services-vessel-fetcher.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Scottish Ferry Services status scraper
+
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=15min
+AccuracySec=1min
+Unit=ferry-services-scraper.service
+
+[Install]
+WantedBy=timers.target

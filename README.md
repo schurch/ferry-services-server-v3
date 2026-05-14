@@ -42,8 +42,7 @@ ferry-services-server-v3/
     types/        API and domain types
   sqlite/
     migrations/   forward-only SQL migrations
-    schema.sql    baseline schema
-    seed.sql      development seed data
+    seed.sql      reference seed data
   public/         static web/API docs assets if needed
   scripts/        deploy and maintenance scripts
 ```
@@ -126,20 +125,53 @@ CI should publish a release artifact containing runtime files only:
 
 ```text
 dist/
+node_modules/
 package.json
 package-lock.json
 sqlite/
 public/
+deploy/
 scripts/
 ```
 
-The VPS should only unpack and run the artifact:
+Deployment uploads the artifact to `/tmp`, unpacks it directly into `/home/stefanchurch/ferry-services-server-v3`, applies migrations and restarts the API. Production dependencies are installed and pruned in CI, then shipped in the artifact, so the VPS does not build or install packages:
 
 ```bash
-npm ci --omit=dev
 npm run migrate
 systemctl restart ferry-services
 ```
+
+The GitHub Actions deploy job runs this automatically on pushes to `main`. It expects these repository secrets:
+
+```text
+DEPLOY_HOST
+DEPLOY_USER
+DEPLOY_SSH_KEY
+DEPLOY_PORT # optional, defaults to 22
+```
+
+Systemd unit templates are stored under `deploy/systemd/`. Install or refresh them manually on the VPS when they change:
+
+```bash
+sudo cp deploy/systemd/* /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ferry-services.service
+sudo systemctl enable --now ferry-services-scraper.timer
+sudo systemctl enable --now ferry-services-weather-fetcher.timer
+sudo systemctl enable --now ferry-services-vessel-fetcher.timer
+sudo systemctl enable --now ferry-services-rail-departure-fetcher.timer
+sudo systemctl enable --now ferry-services-timetable-document-fetcher.timer
+sudo systemctl enable --now ferry-services-transxchange-ingester.timer
+```
+
+Timer behaviour:
+
+- `ferry-services-scraper.timer`: every 15 minutes after the previous run finishes.
+- `ferry-services-weather-fetcher.timer`: every 15 minutes after the previous run finishes.
+- `ferry-services-vessel-fetcher.timer`: every 5 minutes after the previous run finishes.
+- `ferry-services-rail-departure-fetcher.timer`: every 1 minute after the previous run finishes.
+- `ferry-services-timetable-document-fetcher.timer`: every 6 hours after the previous run finishes.
+- `ferry-services-transxchange-ingester.timer`: once per day at 02:00 Europe/London. A successful ingest then runs offline snapshot generation.
 
 ## Database
 
@@ -151,14 +183,17 @@ npm run migrate
 
 It creates the database if needed, applies pending migrations, and loads reference seed data when the database is empty. The baseline uses v3 TransXChange tables without carrying the v2-specific `tx2_*` table prefix forward.
 
-SQLite data should live outside release directories:
+SQLite data should live outside the deployed app directory:
 
 ```text
-/opt/ferry-services/
-  releases/
-  current -> releases/<version>
+/home/stefanchurch/ferry-services-server-v3/
+  dist/
+  node_modules/
+  public/
+  sqlite/
+  scripts/
+  .env
   data/ferry-services.sqlite3
-  env/production.env
 ```
 
 ## Push Notifications
@@ -175,3 +210,7 @@ SQLite data should live outside release directories:
 4. Port offline SQLite snapshot generation.
 5. Port background fetchers and TransXChange ingest.
 6. Add CI artifact packaging and VPS deployment scripts.
+
+## Web Dist
+
+The API server preserves the v2 root behavior by serving `public/index.html` at `/` when the web build has been published into `public/`. Static assets under `public/` are served by the API process. API and documentation routes remain available under `/api`, `/openapi.json`, and `/swagger`.

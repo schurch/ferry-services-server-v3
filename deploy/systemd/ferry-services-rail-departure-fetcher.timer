@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Scottish Ferry Services rail departure fetcher
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=1min
+AccuracySec=15s
+Unit=ferry-services-rail-departure-fetcher.service
+
+[Install]
+WantedBy=timers.target

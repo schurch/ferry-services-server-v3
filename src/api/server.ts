@@ -1,10 +1,12 @@
 import "dotenv/config";
+import fastifyStatic from "@fastify/static";
 import * as Sentry from "@sentry/node";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import { Type } from "@sinclair/typebox";
 import Fastify from "fastify";
 import fs from "node:fs";
+import path from "node:path";
 import { config } from "../config/config.js";
 import { etagForJson, getService, listInstallationServices, listServices, listTimetableDocuments, listVessels } from "../db/api.js";
 import { openDatabase } from "../db/database.js";
@@ -15,11 +17,7 @@ import { serviceToApi, timetableDocumentToApi, vesselToApi } from "./wire.js";
 
 const app = Fastify({ logger: true });
 const db = openDatabase();
-
-const RootResponse = Type.Object({
-  ok: Type.Boolean(),
-  message: Type.String()
-});
+const publicDir = path.resolve("public");
 
 const ServiceIDParams = Type.Object({
   serviceID: Type.Integer()
@@ -100,6 +98,13 @@ await app.register(swaggerUi, {
     docExpansion: "list",
     deepLinking: false
   }
+});
+
+await app.register(fastifyStatic, {
+  root: publicDir,
+  prefix: "/",
+  index: false,
+  wildcard: true
 });
 
 app.get(
@@ -350,13 +355,17 @@ app.get("/", {
   schema: {
     hide: true,
     response: {
-      200: RootResponse
+      200: Type.Any(),
+      404: ErrorResponse
     }
   }
-}, async () => ({
-  ok: true,
-  message: "ferry-services-server-v3 is running"
-}));
+}, async (_request, reply) => {
+  if (fs.existsSync(path.join(publicDir, "index.html"))) {
+    return reply.sendFile("index.html", { maxAge: 0, immutable: false });
+  }
+
+  return reply.code(404).send({ error: "Not Found", message: "Web dist has not been published to public/" });
+});
 
 if (sentryEnabled) {
   Sentry.setupFastifyErrorHandler(app, {

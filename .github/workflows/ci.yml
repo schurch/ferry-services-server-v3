@@ -21,15 +21,21 @@ jobs:
       - run: npm test
       - run: npm run build
 
+      - name: Prune development dependencies
+        if: github.ref == 'refs/heads/main'
+        run: npm prune --omit=dev
+
       - name: Package artifact
         if: github.ref == 'refs/heads/main'
         run: |
           tar -czf ferry-services-server-v3-${{ github.sha }}.tar.gz \
             dist \
+            node_modules \
             package.json \
             package-lock.json \
             sqlite \
             public \
+            deploy \
             scripts
 
       - name: Upload artifact
@@ -38,3 +44,59 @@ jobs:
         with:
           name: ferry-services-server-v3-${{ github.sha }}
           path: ferry-services-server-v3-${{ github.sha }}.tar.gz
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ferry-services-server-v3-${{ github.sha }}
+
+      - name: Configure SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload artifact
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
+          APP_ROOT: /home/stefanchurch/ferry-services-server-v3
+          ARTIFACT: ferry-services-server-v3-${{ github.sha }}.tar.gz
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/deploy_key -P "$DEPLOY_PORT" "$ARTIFACT" "$DEPLOY_USER@$DEPLOY_HOST:/tmp/$ARTIFACT"
+
+      - name: Deploy artifact
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
+          APP_ROOT: /home/stefanchurch/ferry-services-server-v3
+          ARTIFACT: ferry-services-server-v3-${{ github.sha }}.tar.gz
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "APP_ROOT='$APP_ROOT' ARTIFACT='$ARTIFACT' bash -s" <<'REMOTE'
+          set -euo pipefail
+          artifact_path="/tmp/$ARTIFACT"
+          mkdir -p "$APP_ROOT" "$APP_ROOT/data"
+          tar -xzf "$artifact_path" -C "$APP_ROOT"
+          cd "$APP_ROOT"
+          npm run migrate
+          sudo -n systemctl restart ferry-services
+          rm -f "$artifact_path"
+          REMOTE

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Scottish Ferry Services TransXChange ingester
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 Europe/London
+Persistent=true
+Unit=ferry-services-transxchange-ingester.service
+
+[Install]
+WantedBy=timers.target

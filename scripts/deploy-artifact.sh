@@ -7,17 +7,18 @@ if [ "$#" -ne 1 ]; then
 fi
 
 ARTIFACT_PATH="$1"
-APP_ROOT="${APP_ROOT:-/opt/ferry-services}"
-RELEASE_ID="${RELEASE_ID:-$(date -u +%Y%m%d%H%M%S)}"
-RELEASE_DIR="$APP_ROOT/releases/$RELEASE_ID"
+APP_ROOT="${APP_ROOT:-/home/stefanchurch/ferry-services-server-v3}"
 
-mkdir -p "$RELEASE_DIR" "$APP_ROOT/data"
-tar -xzf "$ARTIFACT_PATH" -C "$RELEASE_DIR"
+if [ "$(id -u)" -eq 0 ]; then
+  SUDO=()
+else
+  SUDO=(sudo -n)
+fi
 
-cd "$RELEASE_DIR"
-npm ci --omit=dev
+mkdir -p "$APP_ROOT" "$APP_ROOT/data"
+tar -xzf "$ARTIFACT_PATH" -C "$APP_ROOT"
+
+cd "$APP_ROOT"
 npm run migrate
 
-ln -sfn "$RELEASE_DIR" "$APP_ROOT/current"
-systemctl restart ferry-services
-
+"${SUDO[@]}" systemctl restart ferry-services

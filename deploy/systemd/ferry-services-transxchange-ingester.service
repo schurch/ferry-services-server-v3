@@ -1,0 +1,12 @@
+[Unit]
+Description=Scottish Ferry Services TransXChange ingester
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=stefanchurch
+Type=oneshot
+WorkingDirectory=/home/stefanchurch/ferry-services-server-v3
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm run ingest:transxchange
+ExecStartPost=/usr/bin/npm run generate:offline-snapshot

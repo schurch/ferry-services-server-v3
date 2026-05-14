@@ -1,0 +1,16 @@
+[Unit]
+Description=Scottish Ferry Services API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=stefanchurch
+Type=simple
+WorkingDirectory=/home/stefanchurch/ferry-services-server-v3
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
