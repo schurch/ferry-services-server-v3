@@ -7,6 +7,7 @@ Wants=network-online.target
 User=stefanchurch
 Type=simple
 WorkingDirectory=/home/stefanchurch/ferry-services-server-v3
+EnvironmentFile=-/home/stefanchurch/ferry-services-server-v3/.env
 Environment=NODE_ENV=production
 ExecStart=/usr/bin/npm run start
 Restart=always

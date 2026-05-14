@@ -1,5 +1,6 @@
 [Unit]
 Description=Run Scottish Ferry Services status scraper
+PartOf=ferry-services.target
 
 [Timer]
 OnBootSec=1min

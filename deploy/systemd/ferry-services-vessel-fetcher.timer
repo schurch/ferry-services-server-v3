@@ -1,5 +1,6 @@
 [Unit]
 Description=Run Scottish Ferry Services vessel fetcher
+PartOf=ferry-services.target
 
 [Timer]
 OnBootSec=2min
