@@ -15,7 +15,10 @@ import { defaultSnapshotMetadataPath, defaultSnapshotPath, readOfflineSnapshotMe
 import { sentryEnabled } from "../sentry.js";
 import { serviceToApi, timetableDocumentToApi, vesselToApi } from "./wire.js";
 
-const app = Fastify({ logger: true });
+const app = Fastify({
+  logger: true,
+  ignoreTrailingSlash: true
+});
 const db = openDatabase();
 const publicDir = path.resolve("public");
 
