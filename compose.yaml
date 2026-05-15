@@ -1,0 +1,50 @@
+name: ferry-services
+
+x-app: &app
+  image: stefanchurch/ferry-services:${IMAGE_TAG:-latest}
+  pull_policy: always
+  working_dir: /app
+  init: true
+  user: "${APP_UID:-1000}:${APP_GID:-1000}"
+  env_file:
+    - ./.env
+  environment:
+    NODE_ENV: production
+    HOST: 0.0.0.0
+    TZ: Europe/London
+    HOME: /tmp
+  volumes:
+    - ./data:/app/data
+    - ./offline:/app/offline
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *app
+    command: ["npm", "run", "start"]
+    ports:
+      - "127.0.0.1:4321:4321"
+
+  scraper:
+    <<: *app
+    command: ["sh", "-lc", "sleep 60; while true; do npm run scrape; sleep 900; done"]
+
+  weather-fetcher:
+    <<: *app
+    command: ["sh", "-lc", "sleep 120; while true; do npm run fetch:weather; sleep 900; done"]
+
+  vessel-fetcher:
+    <<: *app
+    command: ["sh", "-lc", "sleep 120; while true; do npm run fetch:vessels; sleep 300; done"]
+
+  rail-fetcher:
+    <<: *app
+    command: ["sh", "-lc", "sleep 180; while true; do npm run fetch:rail; sleep 60; done"]
+
+  timetable-document-fetcher:
+    <<: *app
+    command: ["sh", "-lc", "sleep 240; while true; do npm run fetch:timetable-documents; sleep 21600; done"]
+
+  transxchange-ingester:
+    <<: *app
+    command: ["sh", "-lc", "while true; do npm run ingest:transxchange && npm run generate:offline-snapshot; sleep 86400; done"]

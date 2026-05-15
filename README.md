@@ -11,8 +11,8 @@ This repo is intentionally kept simple:
 - OpenAPI and Swagger UI
 - SQLite via `better-sqlite3`
 - direct APNs and FCM push delivery
-- no Docker
-- CI-built release artifacts deployed to the VPS
+- Docker Compose for production orchestration
+- CI-built Docker images pushed to Docker Hub and deployed to the VPS
 
 ## Project Layout
 
@@ -81,7 +81,7 @@ npm run ingest:transxchange
 npm run generate:offline-snapshot
 ```
 
-Each job should do one pass of its work, log failures for individual records, and exit. Repetition stays in systemd timers rather than inside the Node process. This keeps each job restartable on its own and preserves separate journals per job.
+Each job should do one pass of its work, log failures for individual records, and exit. In production, repetition is handled by dedicated long-running Docker services rather than inside the Node process.
 
 The fetchers are also available through npm scripts after a build:
 
@@ -138,6 +138,15 @@ FCM_PROJECT_ID=
 GOOGLE_APPLICATION_CREDENTIALS=
 ```
 
+For Docker deployments, also set:
+
+```text
+APP_UID=1000
+APP_GID=1000
+```
+
+These control the container user so files written into `data/` and `offline/` stay easy to inspect and edit on the host.
+
 Sentry is optional. Each entry point can use its own DSN:
 
 ```text
@@ -164,41 +173,33 @@ npm test
 npm run build
 ```
 
-CI should publish a release artifact containing runtime files only:
+On pushes to `main`, CI also builds and publishes a multi-arch image to Docker Hub:
 
 ```text
-dist/
-node_modules/
-package.json
-package-lock.json
-sqlite/
-public/
-deploy/
-scripts/
+stefanchurch/ferry-services:latest
+stefanchurch/ferry-services:<git-sha>
 ```
 
-Deployment uploads the artifact to `/tmp`, unpacks it directly into `/home/stefanchurch/ferry-services-server-v3`, applies migrations, and restarts the API. Production dependencies are installed and pruned in CI, then shipped in the artifact, so the VPS does not build or install packages.
+Production should pull the prebuilt image with Docker Compose. Secrets and runtime state stay on the host. The VPS does not run `npm install` and does not compile native dependencies itself.
 
-The deployed app directory should contain the release files plus persistent local state:
+The deployed app directory should contain:
 
 ```text
 /home/stefanchurch/ferry-services-server-v3/
-  dist/
-  node_modules/
-  public/
-  sqlite/
   scripts/
-  deploy/
+  compose.yaml
   .env
-  data/ferry-services.sqlite3
-  offline/snapshot.sqlite3
-  offline/snapshot.meta.json
+  data/
+    ferry-services.sqlite3
+  offline/
+    snapshot.sqlite3
+    snapshot.meta.json
 ```
 
-Manual deploy from an already-built artifact:
+Manual deploy after updating `compose.yaml` and the host `.env`:
 
 ```bash
-APP_ROOT=/home/stefanchurch/ferry-services-server-v3 scripts/deploy-artifact.sh /tmp/ferry-services-server-v3.tar.gz
+APP_ROOT=/home/stefanchurch/ferry-services-server-v3 IMAGE_TAG=latest scripts/deploy-docker.sh
 ```
 
 The GitHub Actions deploy job runs this automatically on pushes to `main`. It expects these repository secrets:
@@ -208,31 +209,27 @@ DEPLOY_HOST
 DEPLOY_USER
 DEPLOY_SSH_KEY
 DEPLOY_PORT # optional, defaults to 22
+DOCKERHUB_USERNAME
+DOCKERHUB_TOKEN
 ```
 
-Systemd unit templates are stored under `deploy/systemd/`. They keep the API and each scheduled job separate, but reduce repeated setup by loading the shared app `.env` file and by providing a `ferry-services.target` that groups the whole application. Install or refresh them manually on the VPS when they change:
+Compose should be started from `/home/stefanchurch/ferry-services-server-v3`:
 
 ```bash
-sudo cp deploy/systemd/* /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now ferry-services.target
-sudo systemctl enable --now ferry-services.service
-sudo systemctl enable --now ferry-services-scraper.timer
-sudo systemctl enable --now ferry-services-weather-fetcher.timer
-sudo systemctl enable --now ferry-services-vessel-fetcher.timer
-sudo systemctl enable --now ferry-services-rail-departure-fetcher.timer
-sudo systemctl enable --now ferry-services-timetable-document-fetcher.timer
-sudo systemctl enable --now ferry-services-transxchange-ingester.timer
+docker compose up -d
 ```
 
-Timer behaviour:
+The stack contains:
 
-- `ferry-services-scraper.timer`: every 15 minutes after the previous run finishes.
-- `ferry-services-weather-fetcher.timer`: every 15 minutes after the previous run finishes.
-- `ferry-services-vessel-fetcher.timer`: every 5 minutes after the previous run finishes.
-- `ferry-services-rail-departure-fetcher.timer`: every 1 minute after the previous run finishes.
-- `ferry-services-timetable-document-fetcher.timer`: every 6 hours after the previous run finishes.
-- `ferry-services-transxchange-ingester.timer`: once per day at 02:00 Europe/London. A successful ingest then runs offline snapshot generation.
+- `api`: the Fastify API server
+- `scraper`: runs `npm run scrape`, then sleeps 15 minutes
+- `weather-fetcher`: runs `npm run fetch:weather`, then sleeps 15 minutes
+- `vessel-fetcher`: runs `npm run fetch:vessels`, then sleeps 5 minutes
+- `rail-fetcher`: runs `npm run fetch:rail`, then sleeps 1 minute
+- `timetable-document-fetcher`: runs `npm run fetch:timetable-documents`, then sleeps 6 hours
+- `transxchange-ingester`: runs `npm run ingest:transxchange && npm run generate:offline-snapshot`, then sleeps 24 hours
+
+These loops preserve the practical systemd behavior of waiting for each run to finish before sleeping for the next interval. The first run of each background service is staggered slightly at container startup to avoid every job firing at once.
 
 ## Database
 
