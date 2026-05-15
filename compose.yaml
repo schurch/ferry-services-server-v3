@@ -16,6 +16,7 @@ x-app: &app
   volumes:
     - ./data:/app/data
     - ./offline:/app/offline
+    - ./secrets:/app/secrets:ro
   restart: unless-stopped
 
 services:

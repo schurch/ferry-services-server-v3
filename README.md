@@ -194,7 +194,19 @@ The deployed app directory should contain:
   offline/
     snapshot.sqlite3
     snapshot.meta.json
+  secrets/
+    AuthKey_....p8
+    google-service-account.json
 ```
+
+Host secret files should live under `secrets/` and be referenced from `.env` with paths relative to the app root, for example:
+
+```text
+APNS_PRIVATE_KEY_PATH=secrets/AuthKey_LV4KJJD8W4.p8
+GOOGLE_APPLICATION_CREDENTIALS=secrets/google-service-account.json
+```
+
+Compose mounts that host directory read-only into `/app/secrets` inside each container, so those relative paths resolve correctly from the container working directory.
 
 Manual deploy after updating `compose.yaml` and the host `.env`:
 
