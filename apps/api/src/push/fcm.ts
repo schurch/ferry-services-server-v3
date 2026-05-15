@@ -1,5 +1,5 @@
 import { GoogleAuth } from "google-auth-library";
-import { config } from "../config/config.js";
+import { config } from "../config.js";
 
 export type FcmPayload = {
   data: {

@@ -1,7 +1,7 @@
 import http2 from "node:http2";
 import crypto from "node:crypto";
 import fs from "node:fs";
-import { config } from "../config/config.js";
+import { config } from "../config.js";
 
 export type ApnsPayload = {
   aps: {

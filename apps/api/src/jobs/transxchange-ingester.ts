@@ -7,7 +7,7 @@ import { Client } from "basic-ftp";
 import type Database from "better-sqlite3";
 import { HTMLElement, parse } from "node-html-parser";
 import * as yauzl from "yauzl";
-import { config } from "../config/config.js";
+import { config } from "../config.js";
 import { openDatabase } from "../db/database.js";
 import { replaceTransxchangeData } from "../db/transxchange.js";
 import type {

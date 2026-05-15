@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { setTimeout as delay } from "node:timers/promises";
-import { config } from "../config/config.js";
+import { config } from "../config.js";
 import { openDatabase } from "../db/database.js";
 import { replaceRailDepartures } from "../db/fetchers.js";
 import type { RailDeparture } from "../types/fetchers.js";

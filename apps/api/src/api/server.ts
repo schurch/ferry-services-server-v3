@@ -6,7 +6,7 @@ import { Type } from "@sinclair/typebox";
 import Fastify from "fastify";
 import fs from "node:fs";
 import path from "node:path";
-import { config } from "../config/config.js";
+import { config } from "../config.js";
 import { etagForJson, getService, listInstallationServices, listServices, listTimetableDocuments, listVessels } from "../db/api.js";
 import { openDatabase } from "../db/database.js";
 import { addInstallationService, deleteInstallationService, getPushStatus, updatePushStatus, upsertInstallation } from "../db/installations.js";

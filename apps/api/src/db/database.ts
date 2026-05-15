@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
-import { config } from "../config/config.js";
+import { config } from "../config.js";
 
 export function openDatabase(databasePath = config.databasePath): Database.Database {
   if (databasePath !== ":memory:") {

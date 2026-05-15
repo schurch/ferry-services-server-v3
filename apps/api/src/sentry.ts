@@ -5,7 +5,7 @@ import path from "node:path";
 loadDotenv({
   path: path.resolve(process.cwd(), "../../.env")
 });
-import { config } from "./config/config.js";
+import { config } from "./config.js";
 
 type SentryService =
   | "server"
