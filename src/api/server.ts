@@ -16,14 +16,17 @@ import { sentryEnabled } from "../sentry.js";
 import {
   AddServiceRequestSchema,
   CreateInstallationRequestSchema,
+  DeviceTypeSchema,
   ErrorResponseSchema,
   LocationResponseSchema,
-  OfflineSnapshotSchema,
   OrganisationResponseSchema,
   PushStatusSchema,
   RailDepartureResponseSchema,
+  ServiceStatusSchema,
   ServiceResponseSchema,
+  SnapshotBodySchema,
   TimetableDocumentResponseSchema,
+  UTCTimeSchema,
   VesselResponseSchema,
   DepartureDestinationSchema,
   DepartureResponseSchema,
@@ -41,6 +44,9 @@ const publicDir = path.resolve("public");
 for (const schema of [
   ErrorResponseSchema,
   PushStatusSchema,
+  DeviceTypeSchema,
+  ServiceStatusSchema,
+  UTCTimeSchema,
   CreateInstallationRequestSchema,
   AddServiceRequestSchema,
   OrganisationResponseSchema,
@@ -52,7 +58,7 @@ for (const schema of [
   VesselResponseSchema,
   TimetableDocumentResponseSchema,
   ServiceResponseSchema,
-  OfflineSnapshotSchema
+  SnapshotBodySchema
 ]) {
   app.addSchema(schema);
 }
@@ -76,6 +82,10 @@ const ServiceDetailQuery = Type.Object({
 
 const TimetableDocumentsQuery = Type.Object({
   serviceID: Type.Optional(Type.Integer())
+});
+
+const IfNoneMatchHeaders = Type.Object({
+  "if-none-match": Type.Optional(Type.String())
 });
 
 type CreateInstallationRequestBody = {
@@ -172,14 +182,18 @@ app.get("/api/services/:serviceID", {
     params: ServiceIDParams,
     querystring: ServiceDetailQuery,
     response: {
-      200: Type.Union([Type.Ref(ServiceResponseSchema), Type.Null()])
+      200: Type.Ref(ServiceResponseSchema),
+      400: Type.Ref(ErrorResponseSchema),
+      404: Type.Ref(ErrorResponseSchema)
     }
   }
-}, async (request) => {
+}, async (request, reply) => {
   const { serviceID } = request.params as { serviceID: number };
   const { departuresDate } = request.query as { departuresDate?: string };
   const service = getService(db, serviceID, departuresDate);
-  return service ? serviceToApi(service) : null;
+  return service
+    ? serviceToApi(service)
+    : reply.code(404).send({ error: "Not Found", message: "Service not found" });
 });
 
 app.post("/api/installations/:installationID", {
@@ -348,9 +362,28 @@ app.get("/api/timetable-documents", {
     description: "Returns current operator timetable documents. Pass serviceID to filter to documents linked to one service; omit it for the global timetable downloads screen. Clients should send If-None-Match with the stored ETag; unchanged lists return 304 Not Modified.",
     tags: ["Ferry Services API"],
     querystring: TimetableDocumentsQuery,
+    headers: IfNoneMatchHeaders,
     response: {
-      200: Type.Array(Type.Ref(TimetableDocumentResponseSchema)),
-      304: Type.Null()
+      200: {
+        description: "Timetable document list",
+        headers: {
+          "Cache-Control": {
+            description: "Cache policy for the response",
+            schema: Type.String()
+          },
+          ETag: {
+            description: "Entity tag for conditional requests",
+            schema: Type.String()
+          }
+        },
+        content: {
+          "application/json": {
+            schema: Type.Array(Type.Ref(TimetableDocumentResponseSchema))
+          }
+        }
+      },
+      304: Type.Null(),
+      400: Type.Ref(ErrorResponseSchema)
     }
   }
 }, async (request, reply) => {
@@ -369,20 +402,36 @@ app.get("/api/timetable-documents", {
 
 app.get("/api/offline/snapshot.sqlite3", {
   schema: {
-    operationId: "downloadOfflineSnapshot",
+    operationId: "getOfflineSnapshot",
     summary: "Download offline SQLite snapshot",
-    description: "Returns the generated offline timetable SQLite database. Clients should send If-None-Match with the stored ETag; unchanged snapshots return 304 Not Modified.",
+    description: "Returns the generated offline timetable SQLite database. Clients should send If-None-Match with the stored ETag; unchanged snapshots return 304 Not Modified. The response is CDN-cacheable and includes Cache-Control, ETag and Last-Modified headers.",
     tags: ["Ferry Services API"],
+    headers: IfNoneMatchHeaders,
     response: {
       200: {
         description: "Offline SQLite snapshot",
+        headers: {
+          "Cache-Control": {
+            description: "Cache policy for the snapshot",
+            schema: Type.String()
+          },
+          ETag: {
+            description: "Entity tag for conditional requests",
+            schema: Type.String()
+          },
+          "Last-Modified": {
+            description: "Last modification time for the snapshot",
+            schema: Type.String()
+          }
+        },
         content: {
           "application/vnd.sqlite3": {
-            schema: Type.Ref(OfflineSnapshotSchema)
+            schema: Type.Ref(SnapshotBodySchema)
           }
         }
       },
       304: Type.Null(),
+      400: Type.Ref(ErrorResponseSchema),
       404: Type.Ref(ErrorResponseSchema)
     }
   }

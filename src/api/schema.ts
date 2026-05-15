@@ -1,6 +1,22 @@
 import { Type } from "@sinclair/typebox";
 
-const DateTime = Type.String({ format: "date-time" });
+export const UTCTimeSchema = Type.Unsafe<string>({
+  $id: "UTCTime",
+  type: "string",
+  format: "date-time"
+});
+
+export const ServiceStatusSchema = Type.Unsafe<0 | 1 | 2 | -99>({
+  $id: "ServiceStatus",
+  type: "integer",
+  enum: [0, 1, 2, -99]
+});
+
+export const DeviceTypeSchema = Type.Unsafe<"IOS" | "Android">({
+  $id: "DeviceType",
+  type: "string",
+  enum: ["IOS", "Android"]
+});
 
 export const ErrorResponseSchema = Type.Object({
   error: Type.String(),
@@ -13,7 +29,7 @@ export const PushStatusSchema = Type.Object({
 
 export const CreateInstallationRequestSchema = Type.Object({
   device_token: Type.String(),
-  device_type: Type.Union([Type.Literal("IOS"), Type.Literal("Android")])
+  device_type: Type.Ref(DeviceTypeSchema)
 }, { $id: "CreateInstallationRequest" });
 
 export const AddServiceRequestSchema = Type.Object({
@@ -43,7 +59,7 @@ export const LocationWeatherResponseSchema = Type.Object({
 export const RailDepartureResponseSchema = Type.Object({
   from: Type.String(),
   to: Type.String(),
-  departure: DateTime,
+  departure: Type.Ref(UTCTimeSchema),
   departure_info: Type.String(),
   platform: Type.Optional(Type.String()),
   is_cancelled: Type.Boolean()
@@ -58,8 +74,8 @@ export const DepartureDestinationSchema = Type.Object({
 
 export const DepartureResponseSchema = Type.Object({
   destination: Type.Ref(DepartureDestinationSchema),
-  departure: DateTime,
-  arrival: DateTime,
+  departure: Type.Ref(UTCTimeSchema),
+  arrival: Type.Ref(UTCTimeSchema),
   notes: Type.Optional(Type.String())
 }, { $id: "DepartureResponse" });
 
@@ -81,7 +97,7 @@ export const VesselResponseSchema = Type.Object({
   course: Type.Optional(Type.Number()),
   latitude: Type.Number(),
   longitude: Type.Number(),
-  last_received: DateTime
+  last_received: Type.Ref(UTCTimeSchema)
 }, { $id: "VesselResponse" });
 
 export const TimetableDocumentResponseSchema = Type.Object({
@@ -94,24 +110,24 @@ export const TimetableDocumentResponseSchema = Type.Object({
   content_hash: Type.Optional(Type.String()),
   content_type: Type.Optional(Type.String()),
   content_length: Type.Optional(Type.Integer()),
-  last_seen_at: DateTime,
-  updated: DateTime
+  last_seen_at: Type.Ref(UTCTimeSchema),
+  updated: Type.Ref(UTCTimeSchema)
 }, { $id: "TimetableDocumentResponse" });
 
 export const ServiceResponseSchema = Type.Object({
   service_id: Type.Integer(),
   area: Type.String(),
   route: Type.String(),
-  status: Type.Union([Type.Literal(0), Type.Literal(1), Type.Literal(2), Type.Literal(-99)]),
+  status: Type.Ref(ServiceStatusSchema),
   locations: Type.Array(Type.Ref(LocationResponseSchema)),
   additional_info: Type.Optional(Type.String()),
   disruption_reason: Type.Optional(Type.String()),
-  last_updated_date: Type.Optional(DateTime),
+  last_updated_date: Type.Optional(Type.Ref(UTCTimeSchema)),
   vessels: Type.Array(Type.Ref(VesselResponseSchema)),
   operator: Type.Optional(Type.Ref(OrganisationResponseSchema)),
   scheduled_departures_available: Type.Boolean(),
-  updated: DateTime,
+  updated: Type.Ref(UTCTimeSchema),
   timetable_documents: Type.Optional(Type.Array(Type.Ref(TimetableDocumentResponseSchema)))
 }, { $id: "ServiceResponse" });
 
-export const OfflineSnapshotSchema = Type.String({ format: "binary", $id: "OfflineSnapshot" });
+export const SnapshotBodySchema = Type.String({ format: "binary", $id: "SnapshotBody" });
