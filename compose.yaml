@@ -24,7 +24,7 @@ services:
     <<: *app
     command: ["npm", "run", "start"]
     ports:
-      - "127.0.0.1:4321:4321"
+      - "127.0.0.1:4322:4322"
 
   scraper:
     <<: *app
