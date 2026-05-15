@@ -18,6 +18,7 @@ WORKDIR /app
 
 COPY apps/api ./apps/api
 COPY apps/web ./apps/web
+COPY scripts ./scripts
 
 RUN npm run build
 
