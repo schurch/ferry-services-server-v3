@@ -113,6 +113,10 @@ function parseSqlTimestamp(timestamp: string): Date {
   return new Date(`${timestamp.replace(" ", "T")}Z`);
 }
 
+function sqlTimestamp(date: Date): string {
+  return date.toISOString().replace("T", " ").slice(0, 19);
+}
+
 function timeWithSeconds(time: string): string {
   return /^\d{2}:\d{2}$/.test(time) ? `${time}:00` : time;
 }
@@ -363,12 +367,13 @@ function createLocationLookup(
   const nextRailByLocation = new Map<number, RailDepartureResponse>();
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
+  const railFreshnessCutoff = sqlTimestamp(new Date(now.getTime() - (5 * 60 * 1000)));
   for (const row of db.prepare(`
     SELECT location_id, departure_name, destination_name, scheduled_departure_time, estimated_departure_time, cancelled, platform
     FROM rail_departures
-    WHERE datetime(created) > datetime('now', '-5 minutes')
+    WHERE datetime(created) > datetime(?)
     ORDER BY scheduled_departure_time
-  `).all() as RailDepartureRow[]) {
+  `).all(railFreshnessCutoff) as RailDepartureRow[]) {
     const departureTime = timeWithSeconds(row.scheduled_departure_time.replace(" ", "T").split("T").pop() ?? "");
     const departure = utcIsoResponse(today, departureTime);
     if (!nextRailByLocation.has(row.location_id) && new Date(departure) > now) {
