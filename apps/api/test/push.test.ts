@@ -6,6 +6,7 @@ import {
   googlePushPayload,
   shouldNotifyForServiceStatusChange
 } from "../src/push/payload.js";
+import { classifyApnsFailure } from "../src/push/apns.js";
 
 const baseService = {
   serviceId: 5,
@@ -67,5 +68,16 @@ describe("push notification payloads", () => {
         priority: "HIGH"
       }
     });
+  });
+});
+
+describe("APNs failure handling", () => {
+  it("deletes only tokens APNs says are unregistered", () => {
+    assert.equal(classifyApnsFailure(410, JSON.stringify({ reason: "Unregistered" })), "invalid-token");
+  });
+
+  it("keeps tokens when APNs reports an environment or topic mismatch", () => {
+    assert.equal(classifyApnsFailure(400, JSON.stringify({ reason: "BadDeviceToken" })), "error");
+    assert.equal(classifyApnsFailure(400, JSON.stringify({ reason: "DeviceTokenNotForTopic" })), "error");
   });
 });

@@ -16,6 +16,8 @@ export type ApnsPayload = {
 
 export type ApnsResult = "success" | "invalid-token" | "skipped";
 
+type ApnsFailureDisposition = "invalid-token" | "error";
+
 let cachedToken: { value: string; expiresAt: number } | null = null;
 
 function base64Url(value: Buffer | string): string {
@@ -43,6 +45,19 @@ function apnsAuthToken(): string {
   const value = `${unsigned}.${base64Url(signature)}`;
   cachedToken = { value, expiresAt: now + 50 * 60 };
   return value;
+}
+
+export function classifyApnsFailure(status: number, responseBody: string): ApnsFailureDisposition {
+  if (status !== 400 && status !== 410) {
+    return "error";
+  }
+
+  try {
+    const reason = (JSON.parse(responseBody) as { reason?: unknown }).reason;
+    return reason === "Unregistered" ? "invalid-token" : "error";
+  } catch {
+    return "error";
+  }
 }
 
 export async function sendApnsMessage(deviceToken: string, payload: ApnsPayload): Promise<ApnsResult> {
@@ -84,16 +99,9 @@ export async function sendApnsMessage(deviceToken: string, payload: ApnsPayload)
           return;
         }
 
-        if (status === 400 || status === 410) {
-          try {
-            const reason = (JSON.parse(responseBody) as { reason?: unknown }).reason;
-            if (reason === "BadDeviceToken" || reason === "DeviceTokenNotForTopic" || reason === "Unregistered") {
-              resolve("invalid-token");
-              return;
-            }
-          } catch {
-            // Fall through to normal error handling.
-          }
+        if (classifyApnsFailure(status, responseBody) === "invalid-token") {
+          resolve("invalid-token");
+          return;
         }
 
         reject(new Error(`APNs returned HTTP ${status}: ${responseBody.slice(0, 500)}`));
