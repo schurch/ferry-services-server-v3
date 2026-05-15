@@ -1,5 +1,11 @@
+import { config as loadDotenv } from "dotenv";
+import path from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
+
+loadDotenv({
+  path: path.resolve(process.cwd(), "../../.env")
+});
 
 const envSchema = Type.Object({
   NODE_ENV: Type.Optional(Type.Union([Type.Literal("development"), Type.Literal("test"), Type.Literal("production")])),

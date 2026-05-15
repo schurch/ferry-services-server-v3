@@ -2,6 +2,9 @@
 .github
 node_modules
 dist
+apps/*/node_modules
+apps/*/dist
+apps/api/public
 data
 offline
 .env

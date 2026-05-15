@@ -3,7 +3,7 @@ name: ferry-services
 x-app: &app
   image: stefanchurch/ferry-services:${IMAGE_TAG:-latest}
   pull_policy: always
-  working_dir: /app
+  working_dir: /app/apps/api
   init: true
   user: "${APP_UID:-1000}:${APP_GID:-1000}"
   env_file:
@@ -14,9 +14,9 @@ x-app: &app
     TZ: Europe/London
     HOME: /tmp
   volumes:
-    - ./data:/app/data
-    - ./offline:/app/offline
-    - ./secrets:/app/secrets:ro
+    - ./data:/app/apps/api/data
+    - ./offline:/app/apps/api/offline
+    - ./secrets:/app/apps/api/secrets:ro
   restart: unless-stopped
 
 services:

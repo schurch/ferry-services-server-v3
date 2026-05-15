@@ -1,5 +1,10 @@
-import "dotenv/config";
 import * as Sentry from "@sentry/node";
+import { config as loadDotenv } from "dotenv";
+import path from "node:path";
+
+loadDotenv({
+  path: path.resolve(process.cwd(), "../../.env")
+});
 import { config } from "./config/config.js";
 
 type SentryService =

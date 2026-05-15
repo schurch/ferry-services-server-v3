@@ -1,4 +1,3 @@
-import "dotenv/config";
 import fastifyStatic from "@fastify/static";
 import * as Sentry from "@sentry/node";
 import swagger from "@fastify/swagger";
