@@ -13,6 +13,22 @@ import { openDatabase } from "../db/database.js";
 import { addInstallationService, deleteInstallationService, getPushStatus, updatePushStatus, upsertInstallation } from "../db/installations.js";
 import { defaultSnapshotMetadataPath, defaultSnapshotPath, readOfflineSnapshotMetadata } from "../offline/snapshot.js";
 import { sentryEnabled } from "../sentry.js";
+import {
+  AddServiceRequestSchema,
+  CreateInstallationRequestSchema,
+  ErrorResponseSchema,
+  LocationResponseSchema,
+  OfflineSnapshotSchema,
+  OrganisationResponseSchema,
+  PushStatusSchema,
+  RailDepartureResponseSchema,
+  ServiceResponseSchema,
+  TimetableDocumentResponseSchema,
+  VesselResponseSchema,
+  DepartureDestinationSchema,
+  DepartureResponseSchema,
+  LocationWeatherResponseSchema
+} from "./schema.js";
 import { serviceToApi, timetableDocumentToApi, vesselToApi } from "./wire.js";
 
 const app = Fastify({
@@ -21,6 +37,25 @@ const app = Fastify({
 });
 const db = openDatabase();
 const publicDir = path.resolve("public");
+
+for (const schema of [
+  ErrorResponseSchema,
+  PushStatusSchema,
+  CreateInstallationRequestSchema,
+  AddServiceRequestSchema,
+  OrganisationResponseSchema,
+  LocationWeatherResponseSchema,
+  RailDepartureResponseSchema,
+  DepartureDestinationSchema,
+  DepartureResponseSchema,
+  LocationResponseSchema,
+  VesselResponseSchema,
+  TimetableDocumentResponseSchema,
+  ServiceResponseSchema,
+  OfflineSnapshotSchema
+]) {
+  app.addSchema(schema);
+}
 
 const ServiceIDParams = Type.Object({
   serviceID: Type.Integer()
@@ -41,24 +76,6 @@ const ServiceDetailQuery = Type.Object({
 
 const TimetableDocumentsQuery = Type.Object({
   serviceID: Type.Optional(Type.Integer())
-});
-
-const CreateInstallationRequest = Type.Object({
-  device_token: Type.String(),
-  device_type: Type.Union([Type.Literal("IOS"), Type.Literal("Android")])
-});
-
-const AddServiceRequest = Type.Object({
-  service_id: Type.Integer()
-});
-
-const PushStatus = Type.Object({
-  enabled: Type.Boolean()
-});
-
-const ErrorResponse = Type.Object({
-  error: Type.String(),
-  message: Type.String()
 });
 
 type CreateInstallationRequestBody = {
@@ -92,11 +109,25 @@ await app.register(swagger, {
       version: "3.0.0"
     },
     tags: [{ name: "Ferry Services API" }]
+  },
+  refResolver: {
+    buildLocalReference(json, _baseUri, _fragment, index) {
+      return typeof json.$id === "string" ? json.$id : typeof json.title === "string" ? json.title : `def-${index}`;
+    }
   }
 });
 
 await app.register(swaggerUi, {
   routePrefix: "/swagger",
+  theme: {
+    title: "Scottish Ferry Services API",
+    css: [
+      {
+        filename: "theme.css",
+        content: ".swagger-ui .topbar { display: none; }"
+      }
+    ]
+  },
   uiConfig: {
     docExpansion: "list",
     deepLinking: false
@@ -122,24 +153,26 @@ app.get(
 
 app.get("/api/services", {
   schema: {
+    operationId: "listServices",
     summary: "List services",
-    description: "Returns all visible ferry services with current live status, operator, route and location metadata.",
+    description: "Returns all visible ferry services with current live status, operator, route and location metadata. Scheduled departures are not embedded in this list response.",
     tags: ["Ferry Services API"],
     response: {
-      200: Type.Array(Type.Any())
+      200: Type.Array(Type.Ref(ServiceResponseSchema))
     }
   }
 }, async () => listServices(db).map(serviceToApi));
 
 app.get("/api/services/:serviceID", {
   schema: {
+    operationId: "getService",
     summary: "Get service detail",
-    description: "Returns one visible service. Pass departuresDate to include scheduled ferry departures for that date.",
+    description: "Returns one visible service. Pass departuresDate as YYYY-MM-DD to include scheduled ferry departures for that local date.",
     tags: ["Ferry Services API"],
     params: ServiceIDParams,
     querystring: ServiceDetailQuery,
     response: {
-      200: Type.Union([Type.Any(), Type.Null()])
+      200: Type.Union([Type.Ref(ServiceResponseSchema), Type.Null()])
     }
   }
 }, async (request) => {
@@ -151,14 +184,15 @@ app.get("/api/services/:serviceID", {
 
 app.post("/api/installations/:installationID", {
   schema: {
+    operationId: "createInstallation",
     summary: "Create installation",
     description: "Registers a mobile app installation for push notifications and returns that installation's saved services.",
     tags: ["Ferry Services API"],
     params: InstallationIDParams,
-    body: CreateInstallationRequest,
+    body: Type.Ref(CreateInstallationRequestSchema),
     response: {
-      200: Type.Array(Type.Any()),
-      400: ErrorResponse
+      200: Type.Array(Type.Ref(ServiceResponseSchema)),
+      400: Type.Ref(ErrorResponseSchema)
     }
   }
 }, async (request, reply) => {
@@ -178,14 +212,15 @@ app.post("/api/installations/:installationID", {
 
 app.get("/api/installations/:installationID/push-status", {
   schema: {
+    operationId: "getPushStatus",
     summary: "Get push status",
     description: "Returns whether push notifications are enabled for the mobile app installation.",
     tags: ["Ferry Services API"],
     params: InstallationIDParams,
     response: {
-      200: PushStatus,
-      400: ErrorResponse,
-      404: ErrorResponse
+      200: Type.Ref(PushStatusSchema),
+      400: Type.Ref(ErrorResponseSchema),
+      404: Type.Ref(ErrorResponseSchema)
     }
   }
 }, async (request, reply) => {
@@ -201,15 +236,16 @@ app.get("/api/installations/:installationID/push-status", {
 
 app.post("/api/installations/:installationID/push-status", {
   schema: {
+    operationId: "updatePushStatus",
     summary: "Update push status",
     description: "Enables or disables push notifications for the mobile app installation.",
     tags: ["Ferry Services API"],
     params: InstallationIDParams,
-    body: PushStatus,
+    body: Type.Ref(PushStatusSchema),
     response: {
-      200: PushStatus,
-      400: ErrorResponse,
-      404: ErrorResponse
+      200: Type.Ref(PushStatusSchema),
+      400: Type.Ref(ErrorResponseSchema),
+      404: Type.Ref(ErrorResponseSchema)
     }
   }
 }, async (request, reply) => {
@@ -225,13 +261,14 @@ app.post("/api/installations/:installationID/push-status", {
 
 app.get("/api/installations/:installationID/services", {
   schema: {
+    operationId: "listInstallationServices",
     summary: "List installation services",
     description: "Returns the services saved by one mobile app installation.",
     tags: ["Ferry Services API"],
     params: InstallationIDParams,
     response: {
-      200: Type.Array(Type.Any()),
-      400: ErrorResponse
+      200: Type.Array(Type.Ref(ServiceResponseSchema)),
+      400: Type.Ref(ErrorResponseSchema)
     }
   }
 }, async (request, reply) => {
@@ -246,14 +283,15 @@ app.get("/api/installations/:installationID/services", {
 
 app.post("/api/installations/:installationID/services", {
   schema: {
+    operationId: "addInstallationService",
     summary: "Add installation service",
     description: "Adds a service to one mobile app installation and returns the updated saved service list.",
     tags: ["Ferry Services API"],
     params: InstallationIDParams,
-    body: AddServiceRequest,
+    body: Type.Ref(AddServiceRequestSchema),
     response: {
-      200: Type.Array(Type.Any()),
-      400: ErrorResponse
+      200: Type.Array(Type.Ref(ServiceResponseSchema)),
+      400: Type.Ref(ErrorResponseSchema)
     }
   }
 }, async (request, reply) => {
@@ -270,13 +308,14 @@ app.post("/api/installations/:installationID/services", {
 
 app.delete("/api/installations/:installationID/services/:serviceID", {
   schema: {
+    operationId: "deleteInstallationService",
     summary: "Delete installation service",
     description: "Removes a service from one mobile app installation and returns the updated saved service list.",
     tags: ["Ferry Services API"],
     params: InstallationServiceParams,
     response: {
-      200: Type.Array(Type.Any()),
-      400: ErrorResponse
+      200: Type.Array(Type.Ref(ServiceResponseSchema)),
+      400: Type.Ref(ErrorResponseSchema)
     }
   }
 }, async (request, reply) => {
@@ -292,23 +331,25 @@ app.delete("/api/installations/:installationID/services/:serviceID", {
 
 app.get("/api/vessels", {
   schema: {
+    operationId: "listVessels",
     summary: "List vessels",
     description: "Returns recent vessel positions used by the live service UI.",
     tags: ["Ferry Services API"],
     response: {
-      200: Type.Array(Type.Any())
+      200: Type.Array(Type.Ref(VesselResponseSchema))
     }
   }
 }, async () => listVessels(db).map(vesselToApi));
 
 app.get("/api/timetable-documents", {
   schema: {
+    operationId: "listTimetableDocuments",
     summary: "List timetable documents",
-    description: "Returns current operator timetable documents. Pass serviceID to filter to documents linked to one service.",
+    description: "Returns current operator timetable documents. Pass serviceID to filter to documents linked to one service; omit it for the global timetable downloads screen. Clients should send If-None-Match with the stored ETag; unchanged lists return 304 Not Modified.",
     tags: ["Ferry Services API"],
     querystring: TimetableDocumentsQuery,
     response: {
-      200: Type.Array(Type.Any()),
+      200: Type.Array(Type.Ref(TimetableDocumentResponseSchema)),
       304: Type.Null()
     }
   }
@@ -328,13 +369,21 @@ app.get("/api/timetable-documents", {
 
 app.get("/api/offline/snapshot.sqlite3", {
   schema: {
+    operationId: "downloadOfflineSnapshot",
     summary: "Download offline SQLite snapshot",
     description: "Returns the generated offline timetable SQLite database. Clients should send If-None-Match with the stored ETag; unchanged snapshots return 304 Not Modified.",
     tags: ["Ferry Services API"],
     response: {
-      200: Type.Any(),
+      200: {
+        description: "Offline SQLite snapshot",
+        content: {
+          "application/vnd.sqlite3": {
+            schema: Type.Ref(OfflineSnapshotSchema)
+          }
+        }
+      },
       304: Type.Null(),
-      404: ErrorResponse
+      404: Type.Ref(ErrorResponseSchema)
     }
   }
 }, async (request, reply) => {
@@ -359,7 +408,7 @@ app.get("/", {
     hide: true,
     response: {
       200: Type.Any(),
-      404: ErrorResponse
+      404: Type.Ref(ErrorResponseSchema)
     }
   }
 }, async (_request, reply) => {
