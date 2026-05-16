@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type Database from "better-sqlite3";
 import type { CreateInstallationRequest, DeviceType, PushStatus } from "../types/api.js";
 
@@ -10,6 +11,26 @@ export type PushInstallation = {
   deviceToken: string;
   deviceType: DeviceType;
 };
+
+export type RegistrationAttemptResult =
+  | { allowed: true }
+  | { allowed: false; reason: "duplicate-churn" | "ip-rate-limit" };
+
+type CountRow = {
+  count: number;
+};
+
+function isoTimestamp(date: Date): string {
+  return date.toISOString();
+}
+
+function shiftedIsoTimestamp(now: Date, deltaMs: number): string {
+  return new Date(now.getTime() + deltaMs).toISOString();
+}
+
+export function hashDeviceToken(deviceToken: string): string {
+  return crypto.createHash("sha256").update(deviceToken).digest("hex");
+}
 
 export function upsertInstallation(
   db: Database.Database,
@@ -100,4 +121,79 @@ export function recordPushError(db: Database.Database, installationId: string, e
         last_push_error = ?
     WHERE installation_id = ?
   `).run(error.slice(0, 1000), installationId);
+}
+
+export function checkAndRecordInstallationRegistrationAttempt(
+  db: Database.Database,
+  installationId: string,
+  clientIp: string,
+  deviceToken: string,
+  now = new Date()
+): RegistrationAttemptResult {
+  const deviceTokenHash = hashDeviceToken(deviceToken);
+  const duplicateWindowStart = shiftedIsoTimestamp(now, -24 * 60 * 60 * 1000);
+  const ipWindowStart = shiftedIsoTimestamp(now, -60 * 60 * 1000);
+  const currentTimestamp = isoTimestamp(now);
+
+  const duplicateAttempt = db.prepare(`
+    SELECT 1
+    FROM installation_registration_attempts
+    WHERE client_ip = ?
+      AND device_token_sha256 = ?
+      AND installation_id != ?
+      AND created >= ?
+    LIMIT 1
+  `).get(clientIp, deviceTokenHash, installationId, duplicateWindowStart);
+
+  if (duplicateAttempt) {
+    return { allowed: false, reason: "duplicate-churn" };
+  }
+
+  const recentAttempts = db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM installation_registration_attempts
+    WHERE client_ip = ?
+      AND created >= ?
+  `).get(clientIp, ipWindowStart) as CountRow;
+
+  if (recentAttempts.count >= 30) {
+    return { allowed: false, reason: "ip-rate-limit" };
+  }
+
+  db.prepare(`
+    INSERT INTO installation_registration_attempts (
+      client_ip,
+      device_token_sha256,
+      installation_id,
+      created
+    )
+    VALUES (?, ?, ?, ?)
+  `).run(clientIp, deviceTokenHash, installationId, currentTimestamp);
+
+  return { allowed: true };
+}
+
+export function deleteStaleInstallations(
+  db: Database.Database,
+  now = new Date(),
+  maxInstallationAgeDays = 90,
+  maxAttemptAgeDays = 7
+): { deletedInstallations: number; deletedAttempts: number } {
+  const staleInstallationCutoff = shiftedIsoTimestamp(now, -(maxInstallationAgeDays * 24 * 60 * 60 * 1000));
+  const staleAttemptCutoff = shiftedIsoTimestamp(now, -(maxAttemptAgeDays * 24 * 60 * 60 * 1000));
+
+  const deletedInstallations = db.prepare(`
+    DELETE FROM installations
+    WHERE updated < ?
+  `).run(staleInstallationCutoff).changes;
+
+  const deletedAttempts = db.prepare(`
+    DELETE FROM installation_registration_attempts
+    WHERE created < ?
+  `).run(staleAttemptCutoff).changes;
+
+  return {
+    deletedInstallations: deletedInstallations ?? 0,
+    deletedAttempts: deletedAttempts ?? 0
+  };
 }

@@ -12,9 +12,12 @@ export function createTestDatabase(): TestDatabase {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "ferry-services-v3-test-"));
   const databasePath = path.join(directory, "test.sqlite3");
   const db = new Database(databasePath);
+  const migrationsDirectory = path.resolve("sqlite/migrations");
 
   db.pragma("foreign_keys = ON");
-  db.exec(fs.readFileSync("sqlite/migrations/001_initial.sql", "utf8"));
+  for (const fileName of fs.readdirSync(migrationsDirectory).filter((name) => name.endsWith(".sql")).sort()) {
+    db.exec(fs.readFileSync(path.join(migrationsDirectory, fileName), "utf8"));
+  }
   db.exec(fs.readFileSync("sqlite/seed.sql", "utf8"));
 
   return {

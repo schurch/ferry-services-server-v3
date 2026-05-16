@@ -28,7 +28,7 @@ export const PushStatusSchema = Type.Object({
 }, { $id: "PushStatus" });
 
 export const CreateInstallationRequestSchema = Type.Object({
-  device_token: Type.String(),
+  device_token: Type.String({ minLength: 32, maxLength: 512 }),
   device_type: Type.Ref(DeviceTypeSchema)
 }, { $id: "CreateInstallationRequest" });
 
