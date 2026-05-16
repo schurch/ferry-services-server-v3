@@ -87,6 +87,17 @@ const IfNoneMatchHeaders = Type.Object({
   "if-none-match": Type.Optional(Type.String())
 });
 
+function describedResponse<T extends Record<string, unknown>>(description: string, schema: T): T & { description: string } {
+  return {
+    ...schema,
+    description
+  };
+}
+
+function errorResponse(description: string) {
+  return describedResponse(description, Type.Ref(ErrorResponseSchema));
+}
+
 type CreateInstallationRequestBody = {
   device_token: string;
   device_type: "IOS" | "Android";
@@ -182,8 +193,8 @@ app.get("/api/services/:serviceID", {
     querystring: ServiceDetailQuery,
     response: {
       200: Type.Ref(ServiceResponseSchema),
-      400: Type.Ref(ErrorResponseSchema),
-      404: Type.Ref(ErrorResponseSchema)
+      400: errorResponse("Invalid departuresDate"),
+      404: errorResponse("Service not found")
     }
   }
 }, async (request, reply) => {
@@ -205,7 +216,7 @@ app.post("/api/installations/:installationID", {
     body: Type.Ref(CreateInstallationRequestSchema),
     response: {
       200: Type.Array(Type.Ref(ServiceResponseSchema)),
-      400: Type.Ref(ErrorResponseSchema)
+      400: errorResponse("Invalid installationID or request body")
     }
   }
 }, async (request, reply) => {
@@ -232,8 +243,8 @@ app.get("/api/installations/:installationID/push-status", {
     params: InstallationIDParams,
     response: {
       200: Type.Ref(PushStatusSchema),
-      400: Type.Ref(ErrorResponseSchema),
-      404: Type.Ref(ErrorResponseSchema)
+      400: errorResponse("Invalid installationID"),
+      404: errorResponse("Installation not found")
     }
   }
 }, async (request, reply) => {
@@ -257,8 +268,8 @@ app.post("/api/installations/:installationID/push-status", {
     body: Type.Ref(PushStatusSchema),
     response: {
       200: Type.Ref(PushStatusSchema),
-      400: Type.Ref(ErrorResponseSchema),
-      404: Type.Ref(ErrorResponseSchema)
+      400: errorResponse("Invalid installationID or request body"),
+      404: errorResponse("Installation not found")
     }
   }
 }, async (request, reply) => {
@@ -281,7 +292,7 @@ app.get("/api/installations/:installationID/services", {
     params: InstallationIDParams,
     response: {
       200: Type.Array(Type.Ref(ServiceResponseSchema)),
-      400: Type.Ref(ErrorResponseSchema)
+      400: errorResponse("Invalid installationID")
     }
   }
 }, async (request, reply) => {
@@ -304,7 +315,7 @@ app.post("/api/installations/:installationID/services", {
     body: Type.Ref(AddServiceRequestSchema),
     response: {
       200: Type.Array(Type.Ref(ServiceResponseSchema)),
-      400: Type.Ref(ErrorResponseSchema)
+      400: errorResponse("Invalid installationID or request body")
     }
   }
 }, async (request, reply) => {
@@ -328,7 +339,7 @@ app.delete("/api/installations/:installationID/services/:serviceID", {
     params: InstallationServiceParams,
     response: {
       200: Type.Array(Type.Ref(ServiceResponseSchema)),
-      400: Type.Ref(ErrorResponseSchema)
+      400: errorResponse("Invalid installationID or serviceID")
     }
   }
 }, async (request, reply) => {
@@ -366,14 +377,8 @@ app.get("/api/timetable-documents", {
       200: {
         description: "Timetable document list",
         headers: {
-          "Cache-Control": {
-            description: "Cache policy for the response",
-            schema: Type.String()
-          },
-          ETag: {
-            description: "Entity tag for conditional requests",
-            schema: Type.String()
-          }
+          "Cache-Control": Type.String({ description: "Cache policy for the response" }),
+          ETag: Type.String({ description: "Entity tag for conditional requests" })
         },
         content: {
           "application/json": {
@@ -381,8 +386,8 @@ app.get("/api/timetable-documents", {
           }
         }
       },
-      304: Type.Null(),
-      400: Type.Ref(ErrorResponseSchema)
+      304: describedResponse("Not Modified", Type.Null()),
+      400: errorResponse("Invalid serviceID")
     }
   }
 }, async (request, reply) => {
@@ -410,18 +415,9 @@ app.get("/api/offline/snapshot.sqlite3", {
       200: {
         description: "Offline SQLite snapshot",
         headers: {
-          "Cache-Control": {
-            description: "Cache policy for the snapshot",
-            schema: Type.String()
-          },
-          ETag: {
-            description: "Entity tag for conditional requests",
-            schema: Type.String()
-          },
-          "Last-Modified": {
-            description: "Last modification time for the snapshot",
-            schema: Type.String()
-          }
+          "Cache-Control": Type.String({ description: "Cache policy for the snapshot" }),
+          ETag: Type.String({ description: "Entity tag for conditional requests" }),
+          "Last-Modified": Type.String({ description: "Last modification time for the snapshot" })
         },
         content: {
           "application/vnd.sqlite3": {
@@ -429,9 +425,9 @@ app.get("/api/offline/snapshot.sqlite3", {
           }
         }
       },
-      304: Type.Null(),
-      400: Type.Ref(ErrorResponseSchema),
-      404: Type.Ref(ErrorResponseSchema)
+      304: describedResponse("Not Modified", Type.Null()),
+      400: errorResponse("Invalid request"),
+      404: errorResponse("Offline snapshot has not been generated")
     }
   }
 }, async (request, reply) => {
@@ -456,7 +452,7 @@ app.get("/", {
     hide: true,
     response: {
       200: Type.Any(),
-      404: Type.Ref(ErrorResponseSchema)
+      404: errorResponse("Web dist has not been published")
     }
   }
 }, async (_request, reply) => {
