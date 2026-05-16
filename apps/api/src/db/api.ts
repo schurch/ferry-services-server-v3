@@ -413,6 +413,71 @@ function createLocationLookup(
   return lookup;
 }
 
+function createServiceLocationLookup(
+  db: Database.Database,
+  serviceId: number,
+  scheduledDepartures = new Map<number, DepartureResponse[]>(),
+  nextDepartures = new Map<number, DepartureResponse>()
+): Map<number, LocationResponse[]> {
+  const rows = db.prepare(`
+    SELECT sl.service_id, l.location_id, l.name, l.latitude, l.longitude
+    FROM service_locations sl
+    JOIN locations l ON l.location_id = sl.location_id
+    WHERE sl.service_id = ?
+    ORDER BY l.location_id
+  `).all(serviceId) as LocationRow[];
+
+  const locationIds = rows.map((row) => row.location_id);
+  const weatherByLocation = new Map<number, LocationWeatherResponse>();
+  const nextRailByLocation = new Map<number, RailDepartureResponse>();
+
+  if (locationIds.length > 0) {
+    const placeholders = locationIds.map(() => "?").join(", ");
+    for (const row of db.prepare(`
+      SELECT location_id, description, icon, temperature, wind_speed, wind_direction
+      FROM location_weather
+      WHERE location_id IN (${placeholders})
+    `).all(...locationIds) as WeatherRow[]) {
+      weatherByLocation.set(row.location_id, weatherResponse(row));
+    }
+
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const railFreshnessCutoff = sqlTimestamp(new Date(now.getTime() - (5 * 60 * 1000)));
+    for (const row of db.prepare(`
+      SELECT location_id, departure_name, destination_name, scheduled_departure_time, estimated_departure_time, cancelled, platform
+      FROM rail_departures
+      WHERE datetime(created) > datetime(?)
+        AND location_id IN (${placeholders})
+      ORDER BY scheduled_departure_time
+    `).all(railFreshnessCutoff, ...locationIds) as RailDepartureRow[]) {
+      const departureTime = timeWithSeconds(row.scheduled_departure_time.replace(" ", "T").split("T").pop() ?? "");
+      const departure = utcIsoResponse(today, departureTime);
+      if (!nextRailByLocation.has(row.location_id) && new Date(departure) > now) {
+        nextRailByLocation.set(row.location_id, {
+          from: row.departure_name,
+          to: row.destination_name,
+          departure,
+          departureInfo: row.estimated_departure_time,
+          platform: value(row.platform),
+          isCancelled: row.cancelled !== 0
+        });
+      }
+    }
+  }
+
+  return new Map([[serviceId, rows.map((row) => ({
+    id: row.location_id,
+    name: row.name,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    scheduledDepartures: scheduledDepartures.has(row.location_id) ? scheduledDepartures.get(row.location_id) ?? [] : undefined,
+    nextDeparture: nextDepartures.get(row.location_id),
+    weather: weatherByLocation.get(row.location_id),
+    nextRailDeparture: nextRailByLocation.get(row.location_id)
+  }))]]);
+}
+
 function createOrganisationLookup(db: Database.Database): Map<number, OrganisationResponse> {
   const rows = db.prepare(`
     SELECT s.service_id, o.organisation_id, o.name, o.website, o.local_phone, o.international_phone, o.email, o.x, o.facebook
@@ -430,6 +495,30 @@ function createOrganisationLookup(db: Database.Database): Map<number, Organisati
     x: value(row.x),
     facebook: value(row.facebook)
   }]));
+}
+
+function createServiceOrganisationLookup(db: Database.Database, serviceId: number): Map<number, OrganisationResponse> {
+  const row = db.prepare(`
+    SELECT s.service_id, o.organisation_id, o.name, o.website, o.local_phone, o.international_phone, o.email, o.x, o.facebook
+    FROM services s
+    JOIN organisations o ON o.organisation_id = s.organisation_id
+    WHERE s.service_id = ?
+  `).get(serviceId) as OrganisationRow | undefined;
+
+  if (!row) {
+    return new Map();
+  }
+
+  return new Map([[row.service_id, {
+    id: row.organisation_id,
+    name: row.name,
+    website: value(row.website),
+    localNumber: value(row.local_phone),
+    internationalNumber: value(row.international_phone),
+    email: value(row.email),
+    x: value(row.x),
+    facebook: value(row.facebook)
+  }]]);
 }
 
 function createServiceVesselLookup(db: Database.Database, now = new Date()): Map<number, VesselResponse[]> {
@@ -464,6 +553,31 @@ function createServiceVesselLookup(db: Database.Database, now = new Date()): Map
     lookup.set(row.service_id, vessels);
   }
   return lookup;
+}
+
+function createSingleServiceVesselLookup(db: Database.Database, serviceId: number, now = new Date()): Map<number, VesselResponse[]> {
+  const rows = db.prepare(`
+    WITH bounding_box AS (
+      SELECT
+        MIN(l.latitude) - 0.02 AS min_latitude,
+        MAX(l.latitude) + 0.02 AS max_latitude,
+        MIN(l.longitude) - 0.02 AS min_longitude,
+        MAX(l.longitude) + 0.02 AS max_longitude
+      FROM locations l
+      JOIN service_locations sl ON l.location_id = sl.location_id
+      WHERE sl.service_id = ?
+    )
+    SELECT ? AS service_id, v.mmsi, v.name, v.speed, v.course, v.latitude, v.longitude, v.last_received
+    FROM vessels v
+    JOIN services s ON s.service_id = ?
+    JOIN bounding_box b
+    WHERE v.latitude BETWEEN b.min_latitude AND b.max_latitude
+      AND v.longitude BETWEEN b.min_longitude AND b.max_longitude
+      AND s.organisation_id = v.organisation_id
+  `).all(serviceId, serviceId, serviceId) as VesselRow[];
+
+  const vessels = rows.filter((row) => isRecent(row.last_received, now)).map(vesselResponse);
+  return vessels.length > 0 ? new Map([[serviceId, vessels]]) : new Map();
 }
 
 function serviceResponse(
@@ -513,11 +627,20 @@ function createTimetableDocumentResponses(db: Database.Database, serviceId?: num
         ORDER BY o.name, td.title
       `).all(serviceId) as TimetableDocumentRow[];
 
-  const links = db.prepare(`
-    SELECT timetable_document_id, service_id
-    FROM timetable_document_services
-    ORDER BY timetable_document_id, service_id
-  `).all() as TimetableDocumentServiceLinkRow[];
+  const links = serviceId === undefined
+    ? db.prepare(`
+        SELECT timetable_document_id, service_id
+        FROM timetable_document_services
+        ORDER BY timetable_document_id, service_id
+      `).all() as TimetableDocumentServiceLinkRow[]
+    : db.prepare(`
+        SELECT related.timetable_document_id, related.service_id
+        FROM timetable_document_services requested
+        JOIN timetable_document_services related
+          ON related.timetable_document_id = requested.timetable_document_id
+        WHERE requested.service_id = ?
+        ORDER BY related.timetable_document_id, related.service_id
+      `).all(serviceId) as TimetableDocumentServiceLinkRow[];
 
   const serviceIdsByDocument = new Map<number, number[]>();
   for (const link of links) {
@@ -541,25 +664,9 @@ function createTimetableDocumentResponses(db: Database.Database, serviceId?: num
   }));
 }
 
-function createTimetableDocumentLookup(db: Database.Database): Map<number, TimetableDocumentResponse[]> {
-  const documents = new Map(createTimetableDocumentResponses(db).map((document) => [document.id, document]));
-  const links = db.prepare(`
-    SELECT timetable_document_id, service_id
-    FROM timetable_document_services
-    ORDER BY timetable_document_id, service_id
-  `).all() as TimetableDocumentServiceLinkRow[];
-
-  const lookup = new Map<number, TimetableDocumentResponse[]>();
-  for (const link of links) {
-    const document = documents.get(link.timetable_document_id);
-    if (!document) {
-      continue;
-    }
-    const serviceDocuments = lookup.get(link.service_id) ?? [];
-    serviceDocuments.push(document);
-    lookup.set(link.service_id, serviceDocuments);
-  }
-  return lookup;
+function createServiceTimetableDocumentLookup(db: Database.Database, serviceId: number): Map<number, TimetableDocumentResponse[]> {
+  const documents = createTimetableDocumentResponses(db, serviceId);
+  return documents.length > 0 ? new Map([[serviceId, documents]]) : new Map();
 }
 
 function departureQueryParams(queryDate: string, serviceId: number): Array<string | number> {
@@ -1062,6 +1169,82 @@ export function listServicesWithScheduledDepartures(db: Database.Database): Set<
   return new Set(rows.map((row) => row.service_id));
 }
 
+function hasScheduledDepartures(db: Database.Database, serviceId: number): boolean {
+  const row = db.prepare(`
+    WITH mapped_service AS (
+        SELECT 1
+        FROM transxchange_service_mappings sm
+        JOIN transxchange_services s
+          ON s.service_code = sm.service_code
+        JOIN service_locations sl_from
+          ON sl_from.service_id = sm.service_id
+        JOIN locations sp_from
+          ON sp_from.location_id = sl_from.location_id
+        JOIN service_locations sl_to
+          ON sl_to.service_id = sm.service_id
+        JOIN locations sp_to
+          ON sp_to.location_id = sl_to.location_id
+         AND sp_to.stop_point_id <> sp_from.stop_point_id
+        JOIN transxchange_journey_pattern_timing_links jptl
+          ON jptl.document_id = s.document_id
+         AND jptl.from_stop_point_ref = sp_from.stop_point_id
+         AND jptl.to_stop_point_ref = sp_to.stop_point_id
+        JOIN transxchange_journey_pattern_sections jps
+          ON jps.document_id = jptl.document_id
+         AND jps.section_ref = jptl.journey_pattern_section_ref
+        JOIN transxchange_journey_patterns jp
+          ON jp.document_id = jps.document_id
+         AND jp.journey_pattern_id = jps.journey_pattern_id
+         AND jp.service_code = s.service_code
+        WHERE sm.service_id = ?
+          AND s.mode = 'ferry'
+          AND sp_from.stop_point_id IS NOT NULL
+          AND sp_to.stop_point_id IS NOT NULL
+        LIMIT 1
+    ),
+    heuristic_service AS (
+        SELECT 1
+        FROM services selected_service
+        JOIN service_locations sl_from
+          ON sl_from.service_id = selected_service.service_id
+        JOIN locations sp_from
+          ON sp_from.location_id = sl_from.location_id
+        JOIN service_locations sl_to
+          ON sl_to.service_id = selected_service.service_id
+        JOIN locations sp_to
+          ON sp_to.location_id = sl_to.location_id
+         AND sp_to.stop_point_id <> sp_from.stop_point_id
+        JOIN transxchange_journey_pattern_timing_links jptl
+          ON jptl.from_stop_point_ref = sp_from.stop_point_id
+         AND jptl.to_stop_point_ref = sp_to.stop_point_id
+        JOIN transxchange_journey_pattern_sections jps
+          ON jps.document_id = jptl.document_id
+         AND jps.section_ref = jptl.journey_pattern_section_ref
+        JOIN transxchange_journey_patterns jp
+          ON jp.document_id = jps.document_id
+         AND jp.journey_pattern_id = jps.journey_pattern_id
+        JOIN transxchange_services s
+          ON s.document_id = jp.document_id
+         AND s.service_code = jp.service_code
+        WHERE selected_service.service_id = ?
+          AND s.mode = 'ferry'
+          AND sp_from.stop_point_id IS NOT NULL
+          AND sp_to.stop_point_id IS NOT NULL
+          AND lower(selected_service.route) NOT LIKE '%freight%'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM transxchange_service_mappings sm
+              WHERE sm.service_id = selected_service.service_id
+          )
+        LIMIT 1
+    )
+    SELECT EXISTS(SELECT 1 FROM mapped_service)
+        OR EXISTS(SELECT 1 FROM heuristic_service) AS available
+  `).get(serviceId, serviceId) as { available: number };
+
+  return row.available !== 0;
+}
+
 export function listServices(db: Database.Database): ServiceResponse[] {
   const now = new Date();
   const rows = db.prepare(`
@@ -1102,13 +1285,12 @@ export function getService(db: Database.Database, serviceId: number, departuresD
       .sort((left, right) => new Date(left.departure).getTime() - new Date(right.departure).getTime())
       .find((departure) => new Date(departure.departure) > now)
   ]).filter((entry): entry is [number, DepartureResponse] => entry[1] !== undefined));
-  const scheduledServices = listServicesWithScheduledDepartures(db);
   return serviceResponse(row, {
-    scheduledServices,
-    locations: createLocationLookup(db, locationDepartures, nextDepartureLookup),
-    organisations: createOrganisationLookup(db),
-    vessels: createServiceVesselLookup(db, now),
-    timetableDocuments: createTimetableDocumentLookup(db)
+    scheduledServices: hasScheduledDepartures(db, serviceId) ? new Set([serviceId]) : new Set(),
+    locations: createServiceLocationLookup(db, serviceId, locationDepartures, nextDepartureLookup),
+    organisations: createServiceOrganisationLookup(db, serviceId),
+    vessels: createSingleServiceVesselLookup(db, serviceId, now),
+    timetableDocuments: createServiceTimetableDocumentLookup(db, serviceId)
   }, now);
 }
 
