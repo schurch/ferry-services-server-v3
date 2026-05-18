@@ -1,10 +1,16 @@
+ARG NPM_VERSION=11.14.1
+
 FROM node:22-bookworm-slim AS deps
+
+ARG NPM_VERSION
 
 WORKDIR /app
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
   && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g npm@${NPM_VERSION}
 
 COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/package.json
@@ -33,6 +39,8 @@ RUN npm prune --omit=dev \
 
 FROM node:22-bookworm-slim
 
+ARG NPM_VERSION
+
 WORKDIR /app/apps/api
 
 ENV NODE_ENV=production
@@ -40,6 +48,8 @@ ENV NODE_ENV=production
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates tzdata \
   && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g npm@${NPM_VERSION}
 
 COPY package.json /app/package.json
 COPY apps/api/package.json /app/apps/api/package.json
