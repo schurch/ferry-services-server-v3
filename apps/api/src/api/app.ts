@@ -166,7 +166,9 @@ function addSchemas(app: FastifyInstance): void {
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({
     logger: config.nodeEnv === "test" ? false : loggerOptions(),
-    ignoreTrailingSlash: true,
+    routerOptions: {
+      ignoreTrailingSlash: true
+    },
     trustProxy: config.trustProxy
   });
   const db = options.db ?? openDatabase();

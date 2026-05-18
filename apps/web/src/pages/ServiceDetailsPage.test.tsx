@@ -107,7 +107,7 @@ function renderPage({
   const entries = state ? [{ pathname: path, state }] : [path];
 
   return render(
-    <MemoryRouter initialEntries={entries}>
+    <MemoryRouter initialEntries={entries} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         <Route path="/" element={<div>Home page</div>} />
         <Route path="/service/:id" element={<ServiceDetailsPage />} />
@@ -141,7 +141,7 @@ describe("ServiceDetailsPage", () => {
     expect(screen.queryByText(/Arrive /)).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "CalMac" })).toBeInTheDocument();
     expect(screen.getByLabelText("Scheduled departures date")).toHaveValue("2026-03-06");
-    expect(screen.getByTestId("google-map")).toHaveTextContent("Map for Hebrides");
+    expect(await screen.findByTestId("google-map")).toHaveTextContent("Map for Hebrides");
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, left: 0, behavior: "auto" });
 
     await waitFor(() => {

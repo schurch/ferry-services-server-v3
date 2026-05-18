@@ -1,5 +1,4 @@
 import React from "react";
-import { GoogleServiceMap } from "../../components/GoogleServiceMap";
 import { getGoogleMapPoints } from "../../maps/points";
 import type { Location, Service } from "../../types";
 import { formatDateTime } from "../../utils/date";
@@ -7,6 +6,11 @@ import { disruptionText, statusLabel } from "../../utils/status";
 import { OperatorContactActions } from "./OperatorContactActions";
 import { ScheduledDeparturesPanel } from "./ScheduledDeparturesPanel";
 import { ServiceLocations } from "./ServiceLocations";
+
+const GoogleServiceMap = React.lazy(async () => {
+  const module = await import("../../components/GoogleServiceMap");
+  return { default: module.GoogleServiceMap };
+});
 
 function ServiceSummaryPanelInner({
   departuresDate,
@@ -56,7 +60,15 @@ function ServiceSummaryPanelInner({
         </p>
       )}
       <div className="panel-map-bleed">
-        <GoogleServiceMap serviceArea={service.area} points={mapPoints} />
+        <React.Suspense
+          fallback={
+            <div className="map-shell">
+              <div className="map-missing-key">Loading map...</div>
+            </div>
+          }
+        >
+          <GoogleServiceMap serviceArea={service.area} points={mapPoints} />
+        </React.Suspense>
       </div>
 
       <ServiceLocations service={service} />
