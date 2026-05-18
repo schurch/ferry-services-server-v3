@@ -5,6 +5,7 @@ import { openDatabase } from "../db/database.js";
 import { saveTimetableDocuments } from "../db/timetable-documents.js";
 import { logger } from "../logger.js";
 import type { ScrapedTimetableDocument } from "../types/fetchers.js";
+import { humanDate } from "./timetable-document-dates.js";
 import { hasOnlyHistoricalYears, isExpiredValidityWindow } from "./timetable-document-filters.js";
 import { htmlText } from "./timetable-document-html.js";
 import { orkneyServiceIdsForDocument } from "./timetable-document-service-mapping.js";
@@ -116,10 +117,6 @@ function normalizeCalMacRouteName(value: string): string {
   return lower(text(replaceAll(replaceAll(value, "–", "-"), "\u00a0", " ")));
 }
 
-function dateOnly(value: unknown): string | null {
-  return typeof value === "string" ? value.split("T")[0] ?? value : null;
-}
-
 async function fetchText(url: string): Promise<string> {
   const response = await fetch(url, {
     headers: {
@@ -228,8 +225,8 @@ function filterTimetableLinks(links: DocumentLink[]): DocumentLink[] {
 function calMacTimetableTitle(timetable: CalMacTimetable): string {
   const routeName = typeof timetable.route?.name === "string" ? timetable.route.name : "CalMac timetable";
   const title = typeof timetable.title === "string" ? timetable.title : "Timetable";
-  const validFrom = dateOnly(timetable.validFrom);
-  const validUntil = dateOnly(timetable.validUntil);
+  const validFrom = humanDate(timetable.validFrom);
+  const validUntil = humanDate(timetable.validUntil);
   const validRange = validFrom && validUntil ? ` (${validFrom} to ${validUntil})` : "";
   return `${routeName}: ${title}${validRange}`;
 }

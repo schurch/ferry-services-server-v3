@@ -9,7 +9,7 @@ function lower(value: string): string {
 function fileNameTitle(url: string): string {
   const path = url.split("?")[0] ?? url;
   const fileName = path.split("/").filter(Boolean).at(-1) ?? path;
-  return text(fileName.replace(/[^a-z0-9]+/gi, " "));
+  return text(fileName.replace(/\.pdf$/i, "").replace(/[^a-z0-9]+/gi, " "));
 }
 
 function stripPdfSizeText(value: string): string {

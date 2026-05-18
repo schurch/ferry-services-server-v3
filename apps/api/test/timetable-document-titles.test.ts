@@ -9,7 +9,7 @@ describe("timetable document title normalization", () => {
         "Print this timetable",
         "https://example.com/files/western-ferries-summer-timetable-2026.pdf"
       ),
-      "western ferries summer timetable 2026 pdf"
+      "western ferries summer timetable 2026"
     );
   });
 
