@@ -1,16 +1,21 @@
 import "dotenv/config";
 import crypto from "node:crypto";
-import { HTMLElement, NodeType, parse } from "node-html-parser";
+import { parse } from "node-html-parser";
 import { openDatabase } from "../db/database.js";
 import { saveTimetableDocuments } from "../db/timetable-documents.js";
 import { logger } from "../logger.js";
 import type { ScrapedTimetableDocument } from "../types/fetchers.js";
+import { hasOnlyHistoricalYears, isExpiredValidityWindow } from "./timetable-document-filters.js";
+import { htmlText } from "./timetable-document-html.js";
+import { orkneyServiceIdsForDocument } from "./timetable-document-service-mapping.js";
+import { normalizeTimetableDocumentTitle } from "./timetable-document-titles.js";
 
 type TimetableDocumentSource = {
   organisationId: number;
   serviceIds: number[];
   pageUrl: string;
   titlePrefix?: string;
+  usePageHeadingForGenericTitles?: boolean;
 };
 
 type DocumentLink = {
@@ -44,7 +49,13 @@ const requestTimeoutMs = 30_000;
 
 const timetableDocumentSources: TimetableDocumentSource[] = [
   { organisationId: 2, serviceIds: [1000], pageUrl: "https://www.northlinkferries.co.uk/timetables/", titlePrefix: "NorthLink" },
-  { organisationId: 3, serviceIds: [2000], pageUrl: "https://www.western-ferries.co.uk/pages/summer-timetable", titlePrefix: "Western Ferries" },
+  {
+    organisationId: 3,
+    serviceIds: [2000],
+    pageUrl: "https://www.western-ferries.co.uk/pages/summer-timetable",
+    titlePrefix: "Western Ferries",
+    usePageHeadingForGenericTitles: true
+  },
   { organisationId: 5, serviceIds: [4000, 4001, 4002, 4003, 4004, 4005, 4006, 4007, 4008], pageUrl: "https://www.orkneyferries.co.uk/timetables", titlePrefix: "Orkney Ferries" },
   { organisationId: 4, serviceIds: [3000, 3001, 3002, 3003, 3004], pageUrl: "https://www.shetland.gov.uk/ferries/timetable", titlePrefix: "Shetland Ferries" },
   { organisationId: 7, serviceIds: [6000], pageUrl: "https://www.highland.gov.uk/downloads/download/4/corran-ferry-timetable-and-fares", titlePrefix: "Corran Ferry" }
@@ -159,18 +170,6 @@ function isPdfDocument(metadata: DocumentMetadata): boolean {
   return metadata.contentType?.toLowerCase().includes("application/pdf") === true;
 }
 
-function htmlText(element: HTMLElement): string {
-  return text(element.childNodes.flatMap((node) => {
-    if (node.nodeType === NodeType.TEXT_NODE) {
-      return [node.rawText];
-    }
-    if (node instanceof HTMLElement) {
-      return [htmlText(node)];
-    }
-    return [];
-  }).join(" "));
-}
-
 function extractDocumentLinks(page: string): DocumentLink[] {
   const root = parse(page);
   return root.querySelectorAll("a").flatMap((anchor) => {
@@ -184,6 +183,11 @@ function extractDocumentLinks(page: string): DocumentLink[] {
   });
 }
 
+function pageHeading(page: string): string | null {
+  const heading = parse(page).querySelector("h1");
+  return heading ? htmlText(heading) : null;
+}
+
 function absoluteUrl(pageUrl: string, href: string): string {
   return new URL(href, pageUrl).toString();
 }
@@ -192,43 +196,10 @@ function canonicalDocumentUrl(url: string): string {
   return lower(url).includes("cdn.shopify.com") ? url.split("?")[0] ?? url : url;
 }
 
-function fileNameTitle(url: string): string {
-  const path = url.split("?")[0] ?? url;
-  const fileName = path.split("/").filter(Boolean).at(-1) ?? path;
-  return text(fileName.replace(/[^a-z0-9]+/gi, " "));
-}
-
-function stripPdfSizeText(value: string): string {
-  return value.replace(/\([^)]*pdf,[^)]*\)/gi, "");
-}
-
-function cleanupLinkTitle(value: string): string {
-  return text(
-    stripPdfSizeText(value)
-      .replace(/opens? in new window/gi, "")
-      .replace(/\bpdf$/i, "")
-  );
-}
-
-function isGenericTimetableTitle(value: string): boolean {
-  return ["timetable", "imetable", "download timetable", "download"].includes(lower(text(value)));
-}
-
-function normalizeTitle(titlePrefix: string | undefined, title: string, url: string): string {
-  const cleanedTitle = cleanupLinkTitle(title);
-  const baseTitle = cleanedTitle.length < 3 || cleanedTitle.length > 160 || isGenericTimetableTitle(cleanedTitle)
-    ? fileNameTitle(url)
-    : cleanedTitle;
-
-  return titlePrefix && !lower(baseTitle).includes(lower(titlePrefix))
-    ? `${titlePrefix}: ${baseTitle}`
-    : baseTitle;
-}
-
-function normalizeDocumentLink(source: TimetableDocumentSource, link: DocumentLink): DocumentLink {
+function normalizeDocumentLink(source: TimetableDocumentSource, link: DocumentLink, fallbackTitle?: string | null): DocumentLink {
   const url = absoluteUrl(source.pageUrl, link.url);
   return {
-    title: normalizeTitle(source.titlePrefix, link.title, url),
+    title: normalizeTimetableDocumentTitle(link.title, url, fallbackTitle),
     url
   };
 }
@@ -246,7 +217,7 @@ function isTimetableDocumentLink(link: DocumentLink): boolean {
 function filterTimetableLinks(links: DocumentLink[]): DocumentLink[] {
   const seen = new Set<string>();
   return links.filter((link) => {
-    if (!isTimetableDocumentLink(link) || seen.has(link.url)) {
+    if (!isTimetableDocumentLink(link) || hasOnlyHistoricalYears(link) || seen.has(link.url)) {
       return false;
     }
     seen.add(link.url);
@@ -308,7 +279,7 @@ async function scrapeCalMacTimetableDocuments(lastSeenAt: string): Promise<Scrap
       const pdfUrl = typeof timetable.pdfUrl === "string" ? timetable.pdfUrl : null;
       const routeName = typeof timetable.route?.name === "string" ? timetable.route.name : "";
       const serviceIds = calMacServiceIds.get(normalizeCalMacRouteName(routeName)) ?? [];
-      if (!pdfUrl || serviceIds.length === 0) {
+      if (!pdfUrl || serviceIds.length === 0 || isExpiredValidityWindow(timetable.validUntil)) {
         continue;
       }
 
@@ -343,7 +314,10 @@ async function scrapeSource(source: TimetableDocumentSource, lastSeenAt: string)
 
   try {
     const page = await fetchText(source.pageUrl);
-    const links = filterTimetableLinks(extractDocumentLinks(page).map((link) => normalizeDocumentLink(source, link)));
+    const fallbackTitle = source.usePageHeadingForGenericTitles ? pageHeading(page) : null;
+    const links = filterTimetableLinks(
+      extractDocumentLinks(page).map((link) => normalizeDocumentLink(source, link, fallbackTitle))
+    );
     logger.info({ sourceLabel, linkCount: links.length }, "Found timetable document links");
 
     const documents: ScrapedTimetableDocument[] = [];
@@ -354,9 +328,17 @@ async function scrapeSource(source: TimetableDocumentSource, lastSeenAt: string)
         continue;
       }
 
+      const serviceIds = source.organisationId === 5
+        ? orkneyServiceIdsForDocument(link)
+        : source.serviceIds;
+      if (serviceIds.length === 0) {
+        logger.info({ sourceLabel, url: link.url, title: link.title }, "Skipping timetable document without mapped services");
+        continue;
+      }
+
       documents.push({
         organisationId: source.organisationId,
-        serviceIds: source.serviceIds,
+        serviceIds,
         title: link.title,
         sourceUrl: canonicalDocumentUrl(link.url),
         contentHash: metadata.contentHash,
