@@ -22,7 +22,7 @@ function cleanupLinkTitle(value: string): string {
       .replace(/opens? in new window/gi, "")
       .replace(/^download a printable\s+/i, "")
       .replace(/\s+sheet$/i, "")
-      .replace(/\bpdf$/i, "")
+      .replace(/\s*pdf$/i, "")
   );
 }
 

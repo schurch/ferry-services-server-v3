@@ -43,4 +43,14 @@ describe("timetable document title normalization", () => {
       "2026 Timetables and Visitor Fares"
     );
   });
+
+  it("removes a trailing PDF label even when markup collapses the whitespace", () => {
+    assert.equal(
+      normalizeTimetableDocumentTitle(
+        "ShapinsayPdf",
+        "https://example.com/files/shapinsay.pdf"
+      ),
+      "Shapinsay"
+    );
+  });
 });
