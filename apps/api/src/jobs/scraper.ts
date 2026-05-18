@@ -4,6 +4,7 @@ import { marked } from "marked";
 import { hideServices, listServicesById, listServiceIdsForOrganisation, saveServices } from "../db/fetchers.js";
 import { openDatabase } from "../db/database.js";
 import { notifyForServiceStatusChanges } from "../push/notifications.js";
+import { logger } from "../logger.js";
 import type { ScrapedService } from "../types/fetchers.js";
 import type { ServiceStatus } from "../types/api.js";
 
@@ -344,7 +345,7 @@ async function main(): Promise<void> {
   try {
     for (const scraper of scrapers) {
       try {
-        console.log(`Fetching ${scraper.name} services`);
+        logger.info({ operator: scraper.name }, "Fetching services");
         const services = await scraper.scrape();
         const oldServices = listServicesById(db, services.map((service) => service.serviceId));
         saveServices(db, services);
@@ -352,7 +353,7 @@ async function main(): Promise<void> {
         await notifyForServiceStatusChanges(db, services, oldServices);
       } catch (error) {
         process.exitCode = 1;
-        console.error(`Skipping ${scraper.name}: ${error instanceof Error ? error.message : String(error)}`);
+        logger.error({ err: error, operator: scraper.name }, "Skipping scraper because fetch failed");
       }
     }
   } finally {

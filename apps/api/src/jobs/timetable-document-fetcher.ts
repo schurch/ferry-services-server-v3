@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { HTMLElement, NodeType, parse } from "node-html-parser";
 import { openDatabase } from "../db/database.js";
 import { saveTimetableDocuments } from "../db/timetable-documents.js";
+import { logger } from "../logger.js";
 import type { ScrapedTimetableDocument } from "../types/fetchers.js";
 
 type TimetableDocumentSource = {
@@ -149,7 +150,7 @@ async function fetchDocumentMetadata(sourceLabel: string, url: string): Promise<
       contentLength: Number.isFinite(contentLength) ? contentLength : undefined
     };
   } catch (error) {
-    console.error(`Failed to fetch timetable document metadata: ${sourceLabel} - ${url} - ${error instanceof Error ? error.message : String(error)}`);
+    logger.warn({ err: error, sourceLabel, url }, "Failed to fetch timetable document metadata");
     return {};
   }
 }
@@ -298,7 +299,7 @@ async function fetchCalMacTimetables(): Promise<CalMacTimetable[]> {
 }
 
 async function scrapeCalMacTimetableDocuments(lastSeenAt: string): Promise<ScrapedTimetableDocument[]> {
-  console.log("Fetching CalMac timetable documents from GraphQL");
+  logger.info("Fetching CalMac timetable documents from GraphQL");
 
   try {
     const timetables = await fetchCalMacTimetables();
@@ -313,7 +314,7 @@ async function scrapeCalMacTimetableDocuments(lastSeenAt: string): Promise<Scrap
 
       const metadata = await fetchDocumentMetadata("CalMac GraphQL", pdfUrl);
       if (!isPdfDocument(metadata)) {
-        console.log(`Skipping non-PDF CalMac timetable document: ${pdfUrl}`);
+        logger.info({ url: pdfUrl }, "Skipping non-PDF CalMac timetable document");
         continue;
       }
 
@@ -328,28 +329,28 @@ async function scrapeCalMacTimetableDocuments(lastSeenAt: string): Promise<Scrap
         lastSeenAt
       });
     }
-    console.log(`Found ${documents.length} CalMac timetable documents from GraphQL`);
+    logger.info({ documentCount: documents.length }, "Found CalMac timetable documents from GraphQL");
     return documents;
   } catch (error) {
-    console.error(`Failed to fetch CalMac timetable documents from GraphQL - ${error instanceof Error ? error.message : String(error)}`);
+    logger.error({ err: error }, "Failed to fetch CalMac timetable documents from GraphQL");
     return [];
   }
 }
 
 async function scrapeSource(source: TimetableDocumentSource, lastSeenAt: string): Promise<ScrapedTimetableDocument[]> {
   const sourceLabel = source.titlePrefix ?? source.pageUrl;
-  console.log(`Fetching timetable document source: ${sourceLabel}`);
+  logger.info({ sourceLabel }, "Fetching timetable document source");
 
   try {
     const page = await fetchText(source.pageUrl);
     const links = filterTimetableLinks(extractDocumentLinks(page).map((link) => normalizeDocumentLink(source, link)));
-    console.log(`Found ${links.length} timetable document links for source: ${sourceLabel}`);
+    logger.info({ sourceLabel, linkCount: links.length }, "Found timetable document links");
 
     const documents: ScrapedTimetableDocument[] = [];
     for (const link of links) {
       const metadata = await fetchDocumentMetadata(sourceLabel, link.url);
       if (!isPdfDocument(metadata)) {
-        console.log(`Skipping non-PDF timetable document: ${sourceLabel} - ${link.url}`);
+        logger.info({ sourceLabel, url: link.url }, "Skipping non-PDF timetable document");
         continue;
       }
 
@@ -366,7 +367,7 @@ async function scrapeSource(source: TimetableDocumentSource, lastSeenAt: string)
     }
     return documents;
   } catch (error) {
-    console.error(`Failed to fetch timetable document source: ${sourceLabel} - ${error instanceof Error ? error.message : String(error)}`);
+    logger.error({ err: error, sourceLabel }, "Failed to fetch timetable document source");
     return [];
   }
 }
@@ -385,7 +386,7 @@ async function scrapeTimetableDocuments(): Promise<ScrapedTimetableDocument[]> {
     seen.add(document.sourceUrl);
     return true;
   });
-  console.log(`Found ${unique.length} unique timetable documents`);
+  logger.info({ documentCount: unique.length }, "Found unique timetable documents");
   return unique;
 }
 
@@ -393,7 +394,7 @@ async function main(): Promise<void> {
   const db = openDatabase();
   try {
     const documents = await scrapeTimetableDocuments();
-    console.log(`Saving ${documents.length} timetable documents`);
+    logger.info({ documentCount: documents.length }, "Saving timetable documents");
     saveTimetableDocuments(db, documents);
   } finally {
     db.close();

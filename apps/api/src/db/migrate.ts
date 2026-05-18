@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openDatabase } from "./database.js";
+import { logger } from "../logger.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,7 +35,7 @@ if (fs.existsSync(migrationsDir)) {
       db.prepare("INSERT INTO schema_migrations (version) VALUES (?)").run(fileName);
     });
     apply();
-    console.log(`Applied migration ${fileName}`);
+    logger.info({ fileName }, "Applied migration");
   }
 }
 
@@ -42,7 +43,7 @@ const referenceData = db.prepare("SELECT COUNT(*) AS count FROM organisations").
 if (referenceData.count === 0) {
   const seed = fs.readFileSync(seedPath, "utf8");
   db.exec(seed);
-  console.log("Loaded seed data");
+  logger.info("Loaded seed data");
 }
 
 db.close();

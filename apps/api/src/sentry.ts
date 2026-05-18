@@ -6,36 +6,14 @@ loadDotenv({
   path: path.resolve(process.cwd(), "../../.env")
 });
 import { config } from "./config.js";
+import { serviceName } from "./logger.js";
 
-type SentryService =
-  | "server"
-  | "scraper"
-  | "weather-fetcher"
-  | "vessel-fetcher"
-  | "rail-departure-fetcher"
-  | "timetable-document-scraper"
-  | "transxchange-ingester"
-  | "offline-snapshot-generator";
-
-function serviceFromEntrypoint(entrypoint: string | undefined): SentryService {
-  if (!entrypoint) return "server";
-
-  if (entrypoint.endsWith("/scraper.js")) return "scraper";
-  if (entrypoint.endsWith("/weather-fetcher.js")) return "weather-fetcher";
-  if (entrypoint.endsWith("/vessel-fetcher.js")) return "vessel-fetcher";
-  if (entrypoint.endsWith("/rail-departure-fetcher.js")) return "rail-departure-fetcher";
-  if (entrypoint.endsWith("/timetable-document-fetcher.js")) return "timetable-document-scraper";
-  if (entrypoint.endsWith("/transxchange-ingester.js")) return "transxchange-ingester";
-  if (entrypoint.endsWith("/offline-snapshot-generator.js")) return "offline-snapshot-generator";
-  return "server";
-}
-
-const sentryService = serviceFromEntrypoint(process.argv[1]);
-
-function serviceDsn(service: SentryService): string | null {
+function serviceDsn(service: typeof serviceName): string | null {
   switch (service) {
     case "server":
       return config.sentry.serverDsn;
+    case "migrate":
+      return null;
     case "scraper":
       return config.sentry.scraperDsn;
     case "weather-fetcher":
@@ -44,7 +22,7 @@ function serviceDsn(service: SentryService): string | null {
       return config.sentry.vesselFetcherDsn;
     case "rail-departure-fetcher":
       return config.sentry.railDepartureFetcherDsn;
-    case "timetable-document-scraper":
+    case "timetable-document-fetcher":
       return config.sentry.timetableDocumentScraperDsn;
     case "transxchange-ingester":
       return config.sentry.transxchangeIngesterDsn;
@@ -53,7 +31,7 @@ function serviceDsn(service: SentryService): string | null {
   }
 }
 
-const dsn = serviceDsn(sentryService);
+const dsn = serviceDsn(serviceName);
 
 export const sentryEnabled = dsn !== null;
 
@@ -64,7 +42,7 @@ if (dsn) {
     tracesSampleRate: config.sentry.tracesSampleRate ?? 0.1,
     initialScope: {
       tags: {
-        service: sentryService
+        service: serviceName
       }
     },
     integrations: [Sentry.fastifyIntegration()]

@@ -8,6 +8,7 @@ import type Database from "better-sqlite3";
 import { HTMLElement, parse } from "node-html-parser";
 import * as yauzl from "yauzl";
 import { config } from "../config.js";
+import { logger } from "../logger.js";
 import { openDatabase } from "../db/database.js";
 import { replaceTransxchangeData } from "../db/transxchange.js";
 import type {
@@ -329,9 +330,11 @@ function resolveVehicleJourneys(rawJourneys: RawVehicleJourney[]): TransxchangeV
     };
   }
 
-  return rawJourneys.flatMap((journey) => {
+  let droppedCount = 0;
+  const resolvedJourneys = rawJourneys.flatMap((journey) => {
     const resolved = resolve(journey);
     if (!resolved.serviceCode || !resolved.lineId || !resolved.journeyPatternId || !resolved.departureTime) {
+      droppedCount += 1;
       return [];
     }
     return [{
@@ -354,6 +357,12 @@ function resolveVehicleJourneys(rawJourneys: RawVehicleJourney[]): TransxchangeV
       noteCode: resolved.noteCode ?? ""
     }];
   });
+
+  if (droppedCount > 0) {
+    logger.debug({ rawJourneyCount: rawJourneys.length, resolvedJourneyCount: resolvedJourneys.length, droppedCount }, "Dropped incomplete TransXChange vehicle journeys during resolution");
+  }
+
+  return resolvedJourneys;
 }
 
 function versionKey(fileName: string, creation?: string, modification?: string): string {
@@ -362,7 +371,10 @@ function versionKey(fileName: string, creation?: string, modification?: string):
 
 function parseDocument(filePath: string): TransxchangeDocument | null {
   const xml = fs.readFileSync(filePath, "utf8");
-  if (!xml.toLowerCase().includes("<mode>ferry</mode>")) return null;
+  if (!xml.toLowerCase().includes("<mode>ferry</mode>")) {
+    logger.debug({ filePath }, "Skipping non-ferry TransXChange document");
+    return null;
+  }
 
   const root = parse(xml);
   const documentNode = root.querySelector("transxchange");
@@ -375,7 +387,10 @@ function parseDocument(filePath: string): TransxchangeDocument | null {
       .filter((service) => service.mode.toLowerCase() === "ferry")
       .map((service) => service.serviceCode)
   );
-  if (ferryServiceCodes.size === 0) return null;
+  if (ferryServiceCodes.size === 0) {
+    logger.debug({ filePath, sourceFileName }, "Skipping TransXChange document without usable ferry services");
+    return null;
+  }
 
   const journeyPatternIds = new Set(
     serviceParts.journeyPatterns
@@ -386,7 +401,7 @@ function parseDocument(filePath: string): TransxchangeDocument | null {
   const vehicleJourneys = resolveVehicleJourneys(parseRawVehicleJourneys(root, calendars))
     .filter((journey) => ferryServiceCodes.has(journey.serviceCode));
 
-  return {
+  const document = {
     sourcePath: filePath,
     sourceFileName,
     sourceVersionKey: versionKey(sourceFileName, sourceCreationDateTime, sourceModificationDateTime),
@@ -400,6 +415,25 @@ function parseDocument(filePath: string): TransxchangeDocument | null {
     journeyPatternTimingLinks: parseTimingLinks(root),
     vehicleJourneys
   };
+
+  logger.debug(
+    {
+      filePath,
+      sourceFileName,
+      serviceCount: document.services.length,
+      stopPointCount: document.stopPoints.length,
+      journeyPatternCount: document.journeyPatterns.length,
+      timingLinkCount: document.journeyPatternTimingLinks.length,
+      vehicleJourneyCount: document.vehicleJourneys.length
+    },
+    "Parsed TransXChange ferry document"
+  );
+
+  if (document.vehicleJourneys.length === 0) {
+    logger.warn({ filePath, sourceFileName, serviceCount: document.services.length }, "Parsed TransXChange ferry document without resolved vehicle journeys");
+  }
+
+  return document;
 }
 
 function findXmlFiles(directory: string): string[] {
@@ -431,13 +465,13 @@ async function downloadFtpFile(ftp: FtpConfig, remoteFilePath: string, localFile
         const nextPercent = Math.min(100, Math.floor(percent / 10) * 10);
         if (nextPercent > lastLoggedPercent) {
           lastLoggedPercent = nextPercent;
-          console.log(`FTP download ${nextPercent}% (${info.bytes}/${totalBytes} bytes)`);
+          logger.info({ percent: nextPercent, downloadedBytes: info.bytes, totalBytes }, "FTP download progress");
         }
       } else {
         const mib = Math.floor(info.bytes / 1024 / 1024);
         if (mib >= lastLoggedMiB + 10) {
           lastLoggedMiB = mib;
-          console.log(`FTP download ${mib} MiB`);
+          logger.info({ downloadedMiB: mib }, "FTP download progress");
         }
       }
     });
@@ -446,7 +480,7 @@ async function downloadFtpFile(ftp: FtpConfig, remoteFilePath: string, localFile
     } catch (error) {
       const downloadedBytes = fs.existsSync(localFilePath) ? fs.statSync(localFilePath).size : 0;
       if (totalBytes && downloadedBytes === totalBytes && error instanceof Error && error.message.includes("Timeout")) {
-        console.warn(`FTP download completed (${downloadedBytes}/${totalBytes} bytes), continuing after control socket timeout`);
+        logger.warn({ downloadedBytes, totalBytes }, "FTP download completed; continuing after control socket timeout");
       } else {
         throw error;
       }
@@ -537,7 +571,7 @@ async function prepareIngestDirectory(): Promise<PreparedIngestDirectory> {
   if (directory) {
     if (path.extname(directory).toLowerCase() === ".zip") {
       const extractDirectory = path.join(ingestWorkingDirectory, path.basename(directory, path.extname(directory)));
-      console.log(`Extracting ${directory} for TransXChange ingest ...`);
+      logger.info({ directory }, "Extracting TransXChange ingest archive");
       await extractZip(directory, extractDirectory);
       return { directory: extractDirectory, cleanupWorkingDirectory: true };
     }
@@ -552,7 +586,7 @@ async function prepareIngestDirectory(): Promise<PreparedIngestDirectory> {
   const zipFilePath = path.join(ingestWorkingDirectory, "S.zip");
   const extractDirectory = path.join(ingestWorkingDirectory, "S");
   fs.mkdirSync(ingestWorkingDirectory, { recursive: true });
-  console.log("Downloading S.zip for TransXChange ingest ...");
+  logger.info("Downloading S.zip for TransXChange ingest");
   await downloadFtpFile(ftp as FtpConfig, "S.zip", zipFilePath);
   await extractZip(zipFilePath, extractDirectory);
   return { directory: extractDirectory, cleanupWorkingDirectory: true };
@@ -560,7 +594,7 @@ async function prepareIngestDirectory(): Promise<PreparedIngestDirectory> {
 
 export function parseTransxchangeDirectory(directory: string): TransxchangeDocument[] {
   const files = findXmlFiles(directory);
-  console.log(`TransXChange files discovered: ${files.length}`);
+  logger.info({ fileCount: files.length }, "TransXChange files discovered");
 
   const documents: TransxchangeDocument[] = [];
   let skipped = 0;
@@ -569,7 +603,7 @@ export function parseTransxchangeDirectory(directory: string): TransxchangeDocum
     if (document) documents.push(document);
     else skipped += 1;
     if (index === 0 || (index + 1) % 50 === 0 || index === files.length - 1) {
-      console.log(`TransXChange progress ${index + 1}/${files.length}: ferry_documents=${documents.length}, skipped=${skipped}`);
+      logger.info({ processedCount: index + 1, fileCount: files.length, ferryDocumentCount: documents.length, skippedCount: skipped }, "TransXChange progress");
     }
   }
 
@@ -579,7 +613,7 @@ export function parseTransxchangeDirectory(directory: string): TransxchangeDocum
 export function ingestTransxchangeDirectory(db: Database.Database, directory: string): void {
   const documents = parseTransxchangeDirectory(directory);
   replaceTransxchangeData(db, documents);
-  console.log(`TransXChange ingest complete: ferry_documents=${documents.length}`);
+  logger.info({ ferryDocumentCount: documents.length }, "TransXChange ingest complete");
 }
 
 async function main(): Promise<void> {
@@ -595,7 +629,7 @@ async function main(): Promise<void> {
     } finally {
       db.close();
     }
-    console.log(`TransXChange ingest complete: ferry_documents=${documents.length}`);
+    logger.info({ ferryDocumentCount: documents.length }, "TransXChange ingest complete");
   } finally {
     if (cleanupWorkingDirectory) {
       fs.rmSync(ingestWorkingDirectory, { recursive: true, force: true });

@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { config } from "../config.js";
 import { openDatabase } from "../db/database.js";
 import { replaceRailDepartures } from "../db/fetchers.js";
+import { logger } from "../logger.js";
 import type { RailDeparture } from "../types/fetchers.js";
 
 type RailLocation = {
@@ -118,7 +119,7 @@ function railDepartures(value: RailDepartureBoard, locationId: number): RailDepa
 
 async function fetchRailDepartures(apiKey: string, station: RailStation): Promise<RailDeparture[] | null> {
   const url = new URL(`https://api1.raildata.org.uk/1010-live-departure-board-dep/LDBWS/api/20220120/GetDepBoardWithDetails/${station.crs}`);
-  console.log(`Fetching rail departures for ${station.crs}`);
+  logger.info({ crs: station.crs, locationId: station.locationId }, "Fetching rail departures");
 
   try {
     const response = await fetch(url, {
@@ -127,28 +128,28 @@ async function fetchRailDepartures(apiKey: string, station: RailStation): Promis
     });
     const body = await response.text();
     if (!response.ok) {
-      console.error(`Skipping rail departures for ${station.crs}: Rail Data returned HTTP ${response.status} - ${body.slice(0, 500)}`);
+      logger.warn({ crs: station.crs, locationId: station.locationId, statusCode: response.status, responseBody: body.slice(0, 500) }, "Skipping rail departures because Rail Data returned an error");
       return null;
     }
 
     const parsed = JSON.parse(body) as RailDepartureBoard;
     const departures = railDepartures(parsed, station.locationId);
     if (!departures) {
-      console.error(`Skipping rail departures for ${station.crs}: could not parse Rail Data response`);
+      logger.warn({ crs: station.crs, locationId: station.locationId }, "Skipping rail departures because Rail Data response could not be parsed");
       return null;
     }
 
-    console.log(`Fetched ${departures.length} rail departures for ${station.crs}`);
+    logger.info({ crs: station.crs, locationId: station.locationId, departureCount: departures.length }, "Fetched rail departures");
     return departures;
   } catch (error) {
-    console.error(`Skipping rail departures for ${station.crs}: ${error instanceof Error ? error.message : String(error)}`);
+    logger.warn({ err: error, crs: station.crs, locationId: station.locationId }, "Skipping rail departures because fetch failed");
     return null;
   }
 }
 
 async function main(): Promise<void> {
   if (!config.railDataApiKey) {
-    console.error("RAIL_DATA_API_KEY is not set; skipping rail departure fetch");
+    logger.warn("RAIL_DATA_API_KEY is not set; skipping rail departure fetch");
     return;
   }
 

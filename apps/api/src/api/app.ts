@@ -19,6 +19,7 @@ import {
   upsertInstallation
 } from "../db/installations.js";
 import { defaultSnapshotMetadataPath, defaultSnapshotPath, readOfflineSnapshotMetadata } from "../offline/snapshot.js";
+import { loggerOptions } from "../logger.js";
 import { sentryEnabled } from "../sentry.js";
 import {
   AddServiceRequestSchema,
@@ -164,7 +165,7 @@ function addSchemas(app: FastifyInstance): void {
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: true,
+    logger: config.nodeEnv === "test" ? false : loggerOptions(),
     ignoreTrailingSlash: true,
     trustProxy: config.trustProxy
   });

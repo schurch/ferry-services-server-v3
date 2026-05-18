@@ -4,6 +4,7 @@ import * as cycleTLS from "cycletls";
 import type { CycleTLSClient } from "cycletls";
 import { openDatabase } from "../db/database.js";
 import { saveVessel } from "../db/fetchers.js";
+import { logger } from "../logger.js";
 import type { VesselPosition } from "../types/fetchers.js";
 
 type OrganisationId = number;
@@ -210,24 +211,24 @@ async function fetchVessel(client: CycleTLSClient, organisationId: OrganisationI
         ? String(response.headers["Content-Type"][0])
         : null;
       if (isCloudflareChallenge(response.status, contentType, body)) {
-        console.error(`MarineTraffic blocked vessel fetching with a Cloudflare challenge at vessel ${mmsi}`);
+        logger.error({ mmsi }, "MarineTraffic blocked vessel fetching with a Cloudflare challenge");
         return "blocked";
       }
-      console.error(`Skipping vessel ${mmsi}: MarineTraffic returned HTTP ${response.status} - ${body.slice(0, 500)}`);
+      logger.warn({ mmsi, statusCode: response.status, responseBody: body.slice(0, 500) }, "Skipping vessel because MarineTraffic returned an error");
       return null;
     }
 
     const value = JSON.parse(body) as MarineTrafficVessel;
     const vessel = vesselPosition(organisationId, value);
     if (!vessel) {
-      console.error(`Skipping vessel ${mmsi}: could not parse MarineTraffic response`);
+      logger.warn({ mmsi }, "Skipping vessel because MarineTraffic response could not be parsed");
       return null;
     }
 
-    console.log(`Fetched ${vessel.name} ${vessel.mmsi}`);
+    logger.info({ mmsi: vessel.mmsi, vesselName: vessel.name }, "Fetched vessel");
     return vessel;
   } catch (error) {
-    console.error(`Skipping vessel ${mmsi}: ${error instanceof Error ? error.message : String(error)}`);
+    logger.warn({ err: error, mmsi }, "Skipping vessel because fetch failed");
     return null;
   }
 }

@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { config } from "../config.js";
 import { listLocations, saveLocationWeather } from "../db/fetchers.js";
 import { openDatabase } from "../db/database.js";
+import { logger } from "../logger.js";
 import type { Location, WeatherObservation } from "../types/fetchers.js";
 
 type OpenWeatherResponse = {
@@ -46,33 +47,33 @@ async function fetchWeatherForLocation(appId: string, location: Location): Promi
   url.searchParams.set("lon", String(location.longitude));
   url.searchParams.set("APPID", appId);
 
-  console.log(`Fetching weather for ${location.name}`);
+  logger.info({ locationId: location.location_id, locationName: location.name }, "Fetching weather");
 
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
     if (!response.ok) {
       const body = await response.text();
-      console.error(`Skipping weather for ${location.name} (${location.location_id}): OpenWeather returned HTTP ${response.status} - ${body.slice(0, 500)}`);
+      logger.warn({ locationId: location.location_id, locationName: location.name, statusCode: response.status, responseBody: body.slice(0, 500) }, "Skipping weather because OpenWeather returned an error");
       return null;
     }
 
     const value = await response.json() as OpenWeatherResponse;
     const observation = weatherObservation(value);
     if (!observation) {
-      console.error(`Skipping weather for ${location.name} (${location.location_id}): could not parse OpenWeather response`);
+      logger.warn({ locationId: location.location_id, locationName: location.name }, "Skipping weather because OpenWeather response could not be parsed");
       return null;
     }
 
     return observation;
   } catch (error) {
-    console.error(`Skipping weather for ${location.name} (${location.location_id}): ${error instanceof Error ? error.message : String(error)}`);
+    logger.warn({ err: error, locationId: location.location_id, locationName: location.name }, "Skipping weather because fetch failed");
     return null;
   }
 }
 
 async function main(): Promise<void> {
   if (!config.openWeatherMapAppId) {
-    console.error("OPENWEATHERMAP_APPID is not set; skipping weather fetch");
+    logger.warn("OPENWEATHERMAP_APPID is not set; skipping weather fetch");
     return;
   }
 

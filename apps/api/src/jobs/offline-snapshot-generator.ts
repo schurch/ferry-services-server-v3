@@ -1,12 +1,13 @@
 import "dotenv/config";
 import { openDatabase } from "../db/database.js";
 import { generateAndWriteOfflineSnapshot } from "../offline/snapshot.js";
+import { logger } from "../logger.js";
 
 const db = openDatabase();
 
 try {
   const metadata = generateAndWriteOfflineSnapshot(db);
-  console.log(`Offline snapshot ready: ${metadata.data_version}, valid ${metadata.valid_from} to ${metadata.valid_to}`);
+  logger.info({ dataVersion: metadata.data_version, validFrom: metadata.valid_from, validTo: metadata.valid_to }, "Offline snapshot ready");
 } finally {
   db.close();
 }

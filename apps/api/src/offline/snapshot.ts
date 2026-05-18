@@ -4,6 +4,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import type SourceDatabase from "better-sqlite3";
 import { londonLocalTimestampResponse, listLocationDepartureRows, listServicesWithScheduledDepartures } from "../db/api.js";
+import { logger } from "../logger.js";
 
 export const defaultSnapshotPath = "offline/snapshot.sqlite3";
 export const defaultSnapshotMetadataPath = "offline/snapshot.meta.json";
@@ -162,10 +163,10 @@ function readDepartures(db: SourceDatabase.Database, services: ServiceRow[], val
   const days = dateRange(validFrom, validTo);
   const departures: OfflineDeparture[] = [];
 
-  console.log(`Offline snapshot departure generation service count: ${serviceIds.length}, days: ${days.length}`);
+  logger.info({ serviceCount: serviceIds.length, dayCount: days.length }, "Offline snapshot departure generation started");
   serviceIds.forEach((serviceId, index) => {
     if (index === 0 || index === serviceIds.length - 1 || (index + 1) % 5 === 0) {
-      console.log(`Offline snapshot departure progress ${index + 1}/${serviceIds.length} service_id=${serviceId}`);
+      logger.info({ processedCount: index + 1, serviceCount: serviceIds.length, serviceId }, "Offline snapshot departure progress");
     }
 
     let serviceDepartureCount = 0;
@@ -182,7 +183,7 @@ function readDepartures(db: SourceDatabase.Database, services: ServiceRow[], val
         notes: row.notes
       })));
     }
-    console.log(`Offline snapshot departures for service ${serviceId}: ${serviceDepartureCount}`);
+    logger.info({ serviceId, departureCount: serviceDepartureCount }, "Offline snapshot departures generated for service");
   });
 
   return departures;
@@ -192,20 +193,20 @@ function createSnapshot(db: SourceDatabase.Database, now = new Date()): OfflineS
   const generatedAt = now.toISOString();
   const validFrom = dateString(now);
   const validTo = addDays(validFrom, 59);
-  console.log(`Generating offline SQLite snapshot for ${validFrom} to ${validTo} ...`);
+  logger.info({ validFrom, validTo }, "Generating offline SQLite snapshot");
 
   const services = readServices(db);
-  console.log(`Offline snapshot visible services: ${services.length}`);
+  logger.info({ serviceCount: services.length }, "Offline snapshot visible services loaded");
   const locations = readLocations(db);
-  console.log(`Offline snapshot locations: ${locations.length}`);
+  logger.info({ locationCount: locations.length }, "Offline snapshot locations loaded");
   const serviceLocations = readServiceLocations(db, services);
-  console.log(`Offline snapshot service-location links: ${serviceLocations.length}`);
+  logger.info({ serviceLocationCount: serviceLocations.length }, "Offline snapshot service-location links loaded");
   const organisations = readOrganisations(db, services);
-  console.log(`Offline snapshot service organisations: ${organisations.length}`);
+  logger.info({ organisationCount: organisations.length }, "Offline snapshot service organisations loaded");
   const servicesWithDepartures = listServicesWithScheduledDepartures(db);
-  console.log(`Offline snapshot services with scheduled departures: ${servicesWithDepartures.size}`);
+  logger.info({ serviceCount: servicesWithDepartures.size }, "Offline snapshot services with scheduled departures loaded");
   const departures = readDepartures(db, services, validFrom, validTo);
-  console.log(`Offline snapshot generated departures: ${departures.length}`);
+  logger.info({ departureCount: departures.length }, "Offline snapshot departures generated");
 
   const snapshotWithoutVersion: OfflineSnapshot = {
     schemaVersion: 1,
@@ -417,7 +418,7 @@ export function generateAndWriteOfflineSnapshot(
   const existingMetadata = readOfflineSnapshotMetadata(metadataPath);
 
   if (existingMetadata?.data_version === snapshot.dataVersion && fs.existsSync(snapshotPath)) {
-    console.log(`Offline snapshot artifact unchanged: ${snapshot.dataVersion}`);
+    logger.info({ dataVersion: snapshot.dataVersion }, "Offline snapshot artifact unchanged");
     return existingMetadata;
   }
 
@@ -425,6 +426,6 @@ export function generateAndWriteOfflineSnapshot(
   fs.mkdirSync(path.dirname(metadataPath), { recursive: true });
   fs.writeFileSync(`${metadataPath}.tmp`, `${JSON.stringify(metadata, null, 2)}\n`);
   fs.renameSync(`${metadataPath}.tmp`, metadataPath);
-  console.log(`Offline snapshot artifact updated: ${snapshot.dataVersion}`);
+  logger.info({ dataVersion: snapshot.dataVersion }, "Offline snapshot artifact updated");
   return metadata;
 }
