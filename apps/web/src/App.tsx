@@ -25,7 +25,7 @@ export function App(): React.JSX.Element {
   }, [systemPrefersDark]);
 
   return (
-    <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <HashRouter>
       <Routes>
         <Route path="/" element={<ServicesPage />} />
         <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />

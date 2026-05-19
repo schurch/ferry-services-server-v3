@@ -3,7 +3,8 @@ import { config as loadDotenv } from "dotenv";
 import path from "node:path";
 
 loadDotenv({
-  path: path.resolve(process.cwd(), "../../.env")
+  path: path.resolve(process.cwd(), "../../.env"),
+  quiet: true
 });
 import { config } from "./config.js";
 import { serviceName } from "./logger.js";

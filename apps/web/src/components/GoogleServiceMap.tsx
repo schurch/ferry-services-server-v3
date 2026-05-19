@@ -124,6 +124,7 @@ async function getVesselBaseIconCanvas(): Promise<HTMLCanvasElement> {
     }
 
     await page.render({
+      canvas,
       canvasContext: context,
       viewport,
       background: "rgba(0, 0, 0, 0)"

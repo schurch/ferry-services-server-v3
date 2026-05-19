@@ -107,7 +107,7 @@ function renderPage({
   const entries = state ? [{ pathname: path, state }] : [path];
 
   return render(
-    <MemoryRouter initialEntries={entries} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter initialEntries={entries}>
       <Routes>
         <Route path="/" element={<div>Home page</div>} />
         <Route path="/service/:id" element={<ServiceDetailsPage />} />
