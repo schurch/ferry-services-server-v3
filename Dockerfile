@@ -1,6 +1,6 @@
 ARG NPM_VERSION=11.14.1
 
-FROM node:22-bookworm-slim AS deps
+FROM node:26-bookworm-slim AS deps
 
 ARG NPM_VERSION
 
@@ -37,7 +37,7 @@ RUN npm prune --omit=dev \
   && npm cache clean --force
 
 
-FROM node:22-bookworm-slim
+FROM node:26-bookworm-slim
 
 ARG NPM_VERSION
 
