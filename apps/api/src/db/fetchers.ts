@@ -2,6 +2,10 @@ import type Database from "better-sqlite3";
 import type { Location, RailDeparture, ScrapedService, VesselPosition, WeatherObservation } from "../types/fetchers.js";
 import type { ServiceStatus } from "../types/api.js";
 
+function nowSql(): string {
+  return new Date().toISOString().replace("T", " ").slice(0, 19);
+}
+
 export function listLocations(db: Database.Database): Location[] {
   return db.prepare(`
     SELECT location_id, name, latitude, longitude
@@ -164,6 +168,117 @@ export function saveServices(db: Database.Database, services: ScrapedService[]):
         service.lastUpdatedDate ?? null,
         service.updated
       );
+    }
+  });
+
+  transaction(services);
+}
+
+export function startServiceScrapeRun(
+  db: Database.Database,
+  input: {
+    operatorName: string;
+    organisationId?: number;
+    sourceName: string;
+    startedAt?: string;
+  }
+): number {
+  const result = db.prepare(`
+    INSERT INTO service_scrape_runs (operator_name, organisation_id, source_name, started_at)
+    VALUES (?, ?, ?, ?)
+  `).run(input.operatorName, input.organisationId ?? null, input.sourceName, input.startedAt ?? nowSql());
+
+  return Number(result.lastInsertRowid);
+}
+
+export function finishServiceScrapeRun(
+  db: Database.Database,
+  scrapeRunId: number,
+  input: {
+    success: boolean;
+    error?: string;
+    completedAt?: string;
+  }
+): void {
+  db.prepare(`
+    UPDATE service_scrape_runs
+    SET success = ?,
+        error = ?,
+        completed_at = ?
+    WHERE scrape_run_id = ?
+  `).run(input.success ? 1 : 0, input.error ?? null, input.completedAt ?? nowSql(), scrapeRunId);
+}
+
+export function saveServiceStatusObservations(
+  db: Database.Database,
+  scrapeRunId: number,
+  services: ScrapedService[],
+  observedAt = nowSql()
+): void {
+  const saveObservation = db.prepare(`
+    INSERT INTO service_status_observations (
+      scrape_run_id,
+      service_id,
+      observed_at,
+      source_service_id,
+      source_service_code,
+      source_area_id,
+      source_area_name,
+      source_area_latitude,
+      source_area_longitude,
+      status,
+      source_status,
+      disruption_reason,
+      last_updated_date
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const saveNotice = db.prepare(`
+    INSERT INTO service_status_observation_notices (
+      observation_id,
+      source_notice_key,
+      source_notice_type,
+      title,
+      disruption_reason,
+      detail_text,
+      detail_markdown,
+      display_order
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const transaction = db.transaction((items: ScrapedService[]) => {
+    for (const service of items) {
+      const notices = service.notices ?? [];
+      const result = saveObservation.run(
+        scrapeRunId,
+        service.serviceId,
+        observedAt,
+        service.sourceServiceId ?? null,
+        service.sourceServiceCode ?? null,
+        service.sourceAreaId ?? null,
+        service.sourceAreaName ?? null,
+        service.sourceAreaLatitude ?? null,
+        service.sourceAreaLongitude ?? null,
+        service.status,
+        service.sourceStatus ?? null,
+        service.disruptionReason ?? null,
+        service.lastUpdatedDate ?? null
+      );
+      const observationId = Number(result.lastInsertRowid);
+
+      notices.forEach((notice, index) => {
+        saveNotice.run(
+          observationId,
+          notice.sourceNoticeKey ?? `${service.serviceId}:${index}`,
+          notice.sourceNoticeType ?? null,
+          notice.title,
+          notice.disruptionReason ?? null,
+          notice.detailText ?? null,
+          notice.detailMarkdown ?? null,
+          index
+        );
+      });
     }
   });
 

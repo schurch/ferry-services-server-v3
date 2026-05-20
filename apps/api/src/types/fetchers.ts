@@ -52,9 +52,26 @@ export type ScrapedService = {
   area: string;
   route: string;
   status: 0 | 1 | 2 | -99;
+  sourceStatus?: string;
+  sourceServiceId?: string;
+  sourceServiceCode?: string;
+  sourceAreaId?: string;
+  sourceAreaName?: string;
+  sourceAreaLatitude?: number;
+  sourceAreaLongitude?: number;
   additionalInfo?: string;
   disruptionReason?: string;
   organisationId: number;
   lastUpdatedDate?: string;
   updated: string;
+  notices?: ScrapedServiceNotice[];
+};
+
+export type ScrapedServiceNotice = {
+  sourceNoticeKey?: string;
+  sourceNoticeType?: string;
+  title: string;
+  disruptionReason?: string;
+  detailText?: string;
+  detailMarkdown?: string;
 };

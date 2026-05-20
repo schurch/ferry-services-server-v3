@@ -1,7 +1,15 @@
 import "dotenv/config";
 import { HTMLElement, NodeType, parse } from "node-html-parser";
 import { marked } from "marked";
-import { hideServices, listServicesById, listServiceIdsForOrganisation, saveServices } from "../db/fetchers.js";
+import {
+  finishServiceScrapeRun,
+  hideServices,
+  listServicesById,
+  listServiceIdsForOrganisation,
+  saveServices,
+  saveServiceStatusObservations,
+  startServiceScrapeRun
+} from "../db/fetchers.js";
 import { openDatabase } from "../db/database.js";
 import { notifyForServiceStatusChanges } from "../push/notifications.js";
 import { logger } from "../logger.js";
@@ -10,6 +18,8 @@ import type { ServiceStatus } from "../types/api.js";
 
 type OperatorScraper = {
   name: string;
+  organisationId: number;
+  sourceName: string;
   scrape: () => Promise<ScrapedService[]>;
   afterSave?: (services: ScrapedService[]) => void;
 };
@@ -18,14 +28,19 @@ type CalMacRouteStatus = {
   title: string;
   status: "SAILING" | "SERVICE" | "INFORMATION" | string;
   detail: string;
+  disruptionReason: string | null;
 };
 
 type CalMacRoute = {
+  id: string;
   name: string;
   status: "NORMAL" | "BE_AWARE" | "DISRUPTIONS" | "ALL_SAILINGS_CANCELLED" | string;
   routeCode: string;
   location: {
+    id: string;
     name: string;
+    latitude: number;
+    longitude: number;
   };
   routeStatuses: CalMacRouteStatus[];
 };
@@ -89,6 +104,22 @@ function htmlOrUndefined(value: string): string | undefined {
   return trimmed.length === 0 ? undefined : trimmed;
 }
 
+function noticeFromHtml(input: {
+  title: string;
+  sourceNoticeType?: string;
+  detailText?: string;
+}): ScrapedService["notices"] {
+  if (!input.detailText || input.detailText.trim().length === 0) {
+    return undefined;
+  }
+
+  return [{
+    title: input.title,
+    sourceNoticeType: input.sourceNoticeType,
+    detailText: input.detailText
+  }];
+}
+
 async function fetchText(url: string): Promise<string> {
   const response = await fetch(url, {
     headers: {
@@ -133,6 +164,7 @@ async function scrapeCorran(): Promise<ScrapedService[]> {
       area: "Corran",
       route: "Nether Lochaber - Ardgour",
       status: SERVICE_STATUS.unknown,
+      sourceStatus: "unknown",
       organisationId: 7
     })
   ];
@@ -144,11 +176,17 @@ async function scrapePentland(): Promise<ScrapedService[]> {
     ? htmlToTextParts(root.querySelector(".vc_acf.announce") as HTMLElement)
     : [];
   const announcement = lines.join(" ").toLowerCase();
-  const status = announcement.includes("cancelled")
-    ? SERVICE_STATUS.cancelled
+  const sourceStatus = announcement.includes("cancelled")
+    ? "cancelled-keyword"
     : ["disruption", "delayed", "delay", "amended", "adverse weather", "weather conditions"].some((word) => announcement.includes(word))
+      ? "disruption-keyword"
+      : "normal-keyword";
+  const status = sourceStatus === "cancelled-keyword"
+    ? SERVICE_STATUS.cancelled
+    : sourceStatus === "disruption-keyword"
       ? SERVICE_STATUS.disrupted
       : SERVICE_STATUS.normal;
+  const additionalInfo = htmlOrUndefined(lines.map((line) => `<p>${line}</p>`).join(" "));
 
   return [
     service({
@@ -156,8 +194,14 @@ async function scrapePentland(): Promise<ScrapedService[]> {
       area: "Pentland Firth",
       route: "Gills Bay - St Margaret's Hope",
       status,
-      additionalInfo: htmlOrUndefined(lines.map((line) => `<p>${line}</p>`).join(" ")),
-      organisationId: 6
+      sourceStatus,
+      additionalInfo,
+      organisationId: 6,
+      notices: noticeFromHtml({
+        title: "Announcement",
+        sourceNoticeType: "ANNOUNCEMENT",
+        detailText: lines.join("\n")
+      })
     })
   ];
 }
@@ -181,8 +225,14 @@ async function scrapeWestern(): Promise<ScrapedService[]> {
       area: "Cowal & Dunoon",
       route: "McInroy's Point (Gourock) - Hunters Quay (Dunoon)",
       status,
+      sourceStatus: activeClass,
       additionalInfo: htmlOrUndefined(additionalInfo),
-      organisationId: 3
+      organisationId: 3,
+      notices: noticeFromHtml({
+        title: "Service status",
+        sourceNoticeType: activeClass,
+        detailText: htmlOrUndefined(additionalInfo)
+      })
     })
   ];
 }
@@ -204,8 +254,14 @@ async function scrapeNorthLink(): Promise<ScrapedService[]> {
       area: "Orkney & Shetland",
       route: "Scrabster - Stromness / Aberdeen - Kirkwall - Lerwick",
       status: statusClass.includes("service-disruptions") ? SERVICE_STATUS.disrupted : SERVICE_STATUS.normal,
+      sourceStatus: statusClass,
       additionalInfo: htmlOrUndefined(additionalInfo),
-      organisationId: 2
+      organisationId: 2,
+      notices: noticeFromHtml({
+        title: "Operations news",
+        sourceNoticeType: statusClass,
+        detailText: htmlOrUndefined(additionalInfo)
+      })
     })
   ];
 }
@@ -226,11 +282,11 @@ async function scrapeShetland(): Promise<ScrapedService[]> {
     `For more information on the ${name} service, phone <a href="tel:${phone}">${phone}</a>.`;
 
   return [
-    service({ serviceId: 3000, area: "Bluemull Sound", route: "Gutcher - Belmont - Hamars Ness", status: status(0), additionalInfo: info("Bluemull Sound", "01595 743971"), organisationId: 4 }),
-    service({ serviceId: 3001, area: "Yell", route: "Toft - Ulsta", status: status(1), additionalInfo: info("Yell Sound", "01595 743972"), organisationId: 4 }),
-    service({ serviceId: 3003, area: "Whalsay", route: "Laxo - Symbister", status: status(2), additionalInfo: info("Whalsay", "01595 743973"), organisationId: 4 }),
-    service({ serviceId: 3002, area: "Bressay", route: "Lerwick - Bressay", status: status(3), additionalInfo: info("Bressay", "01595 743974"), organisationId: 4 }),
-    service({ serviceId: 3004, area: "Skerries", route: "Laxo - Symbister - Skerries - Vidlin - Lerwick", status: status(4), additionalInfo: info("Skerries", "01595 743975"), organisationId: 4 })
+    service({ serviceId: 3000, area: "Bluemull Sound", route: "Gutcher - Belmont - Hamars Ness", status: status(0), sourceStatus: statuses[0], additionalInfo: info("Bluemull Sound", "01595 743971"), organisationId: 4 }),
+    service({ serviceId: 3001, area: "Yell", route: "Toft - Ulsta", status: status(1), sourceStatus: statuses[1], additionalInfo: info("Yell Sound", "01595 743972"), organisationId: 4 }),
+    service({ serviceId: 3003, area: "Whalsay", route: "Laxo - Symbister", status: status(2), sourceStatus: statuses[2], additionalInfo: info("Whalsay", "01595 743973"), organisationId: 4 }),
+    service({ serviceId: 3002, area: "Bressay", route: "Lerwick - Bressay", status: status(3), sourceStatus: statuses[3], additionalInfo: info("Bressay", "01595 743974"), organisationId: 4 }),
+    service({ serviceId: 3004, area: "Skerries", route: "Laxo - Symbister - Skerries - Vidlin - Lerwick", status: status(4), sourceStatus: statuses[4], additionalInfo: info("Skerries", "01595 743975"), organisationId: 4 })
   ];
 }
 
@@ -250,15 +306,15 @@ async function scrapeOrkney(): Promise<ScrapedService[]> {
   };
 
   return [
-    service({ serviceId: 4000, area: "Eday", route: "Kirkwall - Eday - Stronsay - Sanday - Rapness", status: status(0), additionalInfo, organisationId: 5 }),
-    service({ serviceId: 4001, area: "Sanday", route: "Kirkwall - Eday - Stronsay - Sanday - Rapness", status: status(1), additionalInfo, organisationId: 5 }),
-    service({ serviceId: 4002, area: "Stronsay", route: "Kirkwall - Eday - Stronsay - Sanday - Rapness", status: status(2), additionalInfo, organisationId: 5 }),
-    service({ serviceId: 4003, area: "Westray", route: "Kirkwall - Eday - Stronsay - Sanday - Rapness", status: status(3), additionalInfo, organisationId: 5 }),
-    service({ serviceId: 4004, area: "Shapinsay", route: "Kirkwall - Shapinsay", status: status(4), additionalInfo, organisationId: 5 }),
-    service({ serviceId: 4005, area: "Graemsay", route: "Stromness - Graemsay - Hoy", status: status(5), additionalInfo, organisationId: 5 }),
-    service({ serviceId: 4006, area: "Houton", route: "Houton - Flotta - Lyness - Longhope", status: status(6), additionalInfo, organisationId: 5 }),
-    service({ serviceId: 4007, area: "Rousay, Egilsay & Wyre", route: "Tingwall - Rousay - Egilsay - Wyre", status: status(7), additionalInfo, organisationId: 5 }),
-    service({ serviceId: 4008, area: "Pierowall - Papa Westray", route: "Westray Pierowall - Papa Westray", status: status(8), additionalInfo, organisationId: 5 })
+    service({ serviceId: 4000, area: "Eday", route: "Kirkwall - Eday - Stronsay - Sanday - Rapness", status: status(0), sourceStatus: statuses[0], additionalInfo, organisationId: 5, notices: noticeFromHtml({ title: "News", sourceNoticeType: "NEWS", detailText: additionalInfo }) }),
+    service({ serviceId: 4001, area: "Sanday", route: "Kirkwall - Eday - Stronsay - Sanday - Rapness", status: status(1), sourceStatus: statuses[1], additionalInfo, organisationId: 5, notices: noticeFromHtml({ title: "News", sourceNoticeType: "NEWS", detailText: additionalInfo }) }),
+    service({ serviceId: 4002, area: "Stronsay", route: "Kirkwall - Eday - Stronsay - Sanday - Rapness", status: status(2), sourceStatus: statuses[2], additionalInfo, organisationId: 5, notices: noticeFromHtml({ title: "News", sourceNoticeType: "NEWS", detailText: additionalInfo }) }),
+    service({ serviceId: 4003, area: "Westray", route: "Kirkwall - Eday - Stronsay - Sanday - Rapness", status: status(3), sourceStatus: statuses[3], additionalInfo, organisationId: 5, notices: noticeFromHtml({ title: "News", sourceNoticeType: "NEWS", detailText: additionalInfo }) }),
+    service({ serviceId: 4004, area: "Shapinsay", route: "Kirkwall - Shapinsay", status: status(4), sourceStatus: statuses[4], additionalInfo, organisationId: 5, notices: noticeFromHtml({ title: "News", sourceNoticeType: "NEWS", detailText: additionalInfo }) }),
+    service({ serviceId: 4005, area: "Graemsay", route: "Stromness - Graemsay - Hoy", status: status(5), sourceStatus: statuses[5], additionalInfo, organisationId: 5, notices: noticeFromHtml({ title: "News", sourceNoticeType: "NEWS", detailText: additionalInfo }) }),
+    service({ serviceId: 4006, area: "Houton", route: "Houton - Flotta - Lyness - Longhope", status: status(6), sourceStatus: statuses[6], additionalInfo, organisationId: 5, notices: noticeFromHtml({ title: "News", sourceNoticeType: "NEWS", detailText: additionalInfo }) }),
+    service({ serviceId: 4007, area: "Rousay, Egilsay & Wyre", route: "Tingwall - Rousay - Egilsay - Wyre", status: status(7), sourceStatus: statuses[7], additionalInfo, organisationId: 5, notices: noticeFromHtml({ title: "News", sourceNoticeType: "NEWS", detailText: additionalInfo }) }),
+    service({ serviceId: 4008, area: "Pierowall - Papa Westray", route: "Westray Pierowall - Papa Westray", status: status(8), sourceStatus: statuses[8], additionalInfo, organisationId: 5, notices: noticeFromHtml({ title: "News", sourceNoticeType: "NEWS", detailText: additionalInfo }) })
   ];
 }
 
@@ -279,13 +335,32 @@ function calMacRouteInfo(statuses: CalMacRouteStatus[]): string | undefined {
   return htmlOrUndefined(html);
 }
 
+function calMacDisruptionReason(statuses: CalMacRouteStatus[]): string | undefined {
+  const reasons = [...new Set(statuses
+    .filter((status) => status.disruptionReason !== null && (status.status === "SAILING" || status.status === "WARNING"))
+    .map((status) => status.disruptionReason)
+    .filter((reason): reason is string => Boolean(reason)))].sort();
+  return reasons.length === 0 ? undefined : reasons.join("; ");
+}
+
+function calMacNotice(routeCode: string, status: CalMacRouteStatus, index: number): NonNullable<ScrapedService["notices"]>[number] {
+  return {
+    sourceNoticeKey: `${routeCode}:${index}:${status.status}:${status.title}`,
+    sourceNoticeType: status.status,
+    title: status.title,
+    disruptionReason: status.disruptionReason ?? undefined,
+    detailMarkdown: status.detail
+  };
+}
+
 async function scrapeCalMac(): Promise<ScrapedService[]> {
   const query = `{
     routes {
+      id
       name
       routeCode
-      routeStatuses { title status detail }
-      location { name }
+      routeStatuses { title status detail disruptionReason }
+      location { id name latitude longitude }
       status
     }
   }`;
@@ -317,8 +392,17 @@ async function scrapeCalMac(): Promise<ScrapedService[]> {
     area: route.location.name,
     route: route.name.replaceAll("[", "(").replaceAll("]", ")").replaceAll("�", "-"),
     status: calMacStatus(route.status),
+    sourceStatus: route.status,
+    sourceServiceId: route.id,
+    sourceServiceCode: route.routeCode,
+    sourceAreaId: route.location.id,
+    sourceAreaName: route.location.name,
+    sourceAreaLatitude: route.location.latitude,
+    sourceAreaLongitude: route.location.longitude,
+    disruptionReason: calMacDisruptionReason(route.routeStatuses),
     additionalInfo: calMacRouteInfo(route.routeStatuses),
-    organisationId: 1
+    organisationId: 1,
+    notices: route.routeStatuses.map((status, index) => calMacNotice(route.routeCode, status, index))
   }));
 }
 
@@ -327,6 +411,8 @@ async function main(): Promise<void> {
   const scrapers: OperatorScraper[] = [
     {
       name: "CalMac",
+      organisationId: 1,
+      sourceName: "CalMac GraphQL routes",
       scrape: scrapeCalMac,
       afterSave: (services) => {
         const scrapedIds = new Set(services.map((service) => service.serviceId));
@@ -334,25 +420,36 @@ async function main(): Promise<void> {
         hideServices(db, removedIds);
       }
     },
-    { name: "Corran Ferry", scrape: scrapeCorran },
-    { name: "NorthLink", scrape: scrapeNorthLink },
-    { name: "Pentland Ferries", scrape: scrapePentland },
-    { name: "Western Ferries", scrape: scrapeWestern },
-    { name: "Shetland Ferries", scrape: scrapeShetland },
-    { name: "Orkney Ferries", scrape: scrapeOrkney }
+    { name: "Corran Ferry", organisationId: 7, sourceName: "Corran scraper", scrape: scrapeCorran },
+    { name: "NorthLink", organisationId: 2, sourceName: "NorthLink ops news", scrape: scrapeNorthLink },
+    { name: "Pentland Ferries", organisationId: 6, sourceName: "Pentland homepage", scrape: scrapePentland },
+    { name: "Western Ferries", organisationId: 3, sourceName: "Western Ferries status", scrape: scrapeWestern },
+    { name: "Shetland Ferries", organisationId: 4, sourceName: "Shetland ferry status", scrape: scrapeShetland },
+    { name: "Orkney Ferries", organisationId: 5, sourceName: "Orkney service update", scrape: scrapeOrkney }
   ];
 
   try {
     for (const scraper of scrapers) {
+      const scrapeRunId = startServiceScrapeRun(db, {
+        operatorName: scraper.name,
+        organisationId: scraper.organisationId,
+        sourceName: scraper.sourceName
+      });
       try {
         logger.info({ operator: scraper.name }, "Fetching services");
         const services = await scraper.scrape();
         const oldServices = listServicesById(db, services.map((service) => service.serviceId));
         saveServices(db, services);
+        saveServiceStatusObservations(db, scrapeRunId, services);
         scraper.afterSave?.(services);
         await notifyForServiceStatusChanges(db, services, oldServices);
+        finishServiceScrapeRun(db, scrapeRunId, { success: true });
       } catch (error) {
         process.exitCode = 1;
+        finishServiceScrapeRun(db, scrapeRunId, {
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        });
         logger.error({ err: error, operator: scraper.name }, "Skipping scraper because fetch failed");
       }
     }
