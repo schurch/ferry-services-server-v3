@@ -198,6 +198,7 @@ function vesselVoyageResponse(row: VesselRow, serviceLocations: LocationResponse
   const originLocation = matchServiceLocation(serviceLocations, originName);
   const destinationLocation = reportedDestinationName
     ? matchServiceLocation(serviceLocations, reportedDestinationName)
+      ?? routeShorthandDestination(serviceLocations, originLocation, reportedDestinationName)
     : undefined;
   if (originLocation === undefined || destinationLocation === undefined) {
     return undefined;
@@ -262,6 +263,30 @@ function normalizeLocationName(value: string): string {
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ");
+}
+
+function routeShorthandDestination(
+  serviceLocations: LocationResponse[],
+  originLocation: LocationReferenceResponse | undefined,
+  rawDestination: string
+): LocationReferenceResponse | undefined {
+  if (
+    originLocation === undefined ||
+    serviceLocations.length !== 2 ||
+    !/[<>/:-]/.test(rawDestination)
+  ) {
+    return undefined;
+  }
+
+  const other = serviceLocations.find((location) => location.id !== originLocation.id);
+  return other
+    ? {
+        id: other.id,
+        name: other.name,
+        latitude: other.latitude,
+        longitude: other.longitude
+      }
+    : undefined;
 }
 
 function isRecent(timestamp: string, now = new Date()): boolean {
