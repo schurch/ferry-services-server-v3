@@ -30,8 +30,22 @@ export function saveLocationWeather(db: Database.Database, locationId: number, w
 
 export function saveVessel(db: Database.Database, vessel: VesselPosition): void {
   db.prepare(`
-    INSERT INTO vessels (mmsi, name, speed, course, latitude, longitude, last_received, updated, organisation_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+    INSERT INTO vessels (
+      mmsi,
+      name,
+      speed,
+      course,
+      latitude,
+      longitude,
+      last_received,
+      destination_name,
+      eta,
+      origin_name,
+      origin_departed_at,
+      updated,
+      organisation_id
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
     ON CONFLICT (mmsi) DO UPDATE
       SET name = excluded.name,
           speed = excluded.speed,
@@ -39,6 +53,13 @@ export function saveVessel(db: Database.Database, vessel: VesselPosition): void 
           latitude = excluded.latitude,
           longitude = excluded.longitude,
           last_received = excluded.last_received,
+          destination_name = excluded.destination_name,
+          eta = excluded.eta,
+          origin_name = excluded.origin_name,
+          origin_departed_at = excluded.origin_departed_at,
+          arrival_name = NULL,
+          arrival_at = NULL,
+          progress = NULL,
           updated = excluded.updated,
           organisation_id = excluded.organisation_id
   `).run(
@@ -49,6 +70,10 @@ export function saveVessel(db: Database.Database, vessel: VesselPosition): void 
     vessel.latitude,
     vessel.longitude,
     vessel.lastReceived,
+    vessel.destinationName ?? null,
+    vessel.eta ?? null,
+    vessel.originName ?? null,
+    vessel.originDepartedAt ?? null,
     vessel.organisationId
   );
 }

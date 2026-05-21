@@ -7,7 +7,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import fs from "node:fs";
 import path from "node:path";
 import { config } from "../config.js";
-import { etagForJson, getService, listInstallationServices, listServices, listTimetableDocuments, listVessels } from "../db/api.js";
+import { etagForJson, getService, listInstallationServices, listServices, listTimetableDocuments } from "../db/api.js";
 import { openDatabase } from "../db/database.js";
 import {
   addInstallationService,
@@ -38,9 +38,10 @@ import {
   SnapshotBodySchema,
   TimetableDocumentResponseSchema,
   UTCTimeSchema,
+  VesselVoyageResponseSchema,
   VesselResponseSchema
 } from "./schema.js";
-import { serviceToApi, timetableDocumentToApi, vesselToApi } from "./wire.js";
+import { serviceToApi, timetableDocumentToApi } from "./wire.js";
 import { MemoryRateLimiter } from "./rate-limit.js";
 
 const publicDir = path.resolve("public");
@@ -154,6 +155,7 @@ function addSchemas(app: FastifyInstance): void {
     DepartureDestinationSchema,
     DepartureResponseSchema,
     LocationResponseSchema,
+    VesselVoyageResponseSchema,
     VesselResponseSchema,
     TimetableDocumentResponseSchema,
     ServiceResponseSchema,
@@ -506,27 +508,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     deleteInstallationService(db, installationId, serviceID);
     return savedServicesForInstallation(installationId);
   });
-
-  app.get("/api/vessels", {
-    preHandler: rateLimited(rateLimiter, {
-      bucket: "vessels",
-      limit: 120,
-      windowMs: 60 * 1000,
-      key: (request) => request.ip,
-      message: "Too many vessel requests",
-      now
-    }),
-    schema: {
-      operationId: "listVessels",
-      summary: "List vessels",
-      description: "Returns recent vessel positions used by the live service UI.",
-      tags: ["Ferry Services API"],
-      response: {
-        200: Type.Array(Type.Ref(VesselResponseSchema)),
-        429: errorResponse("Too many vessel requests")
-      }
-    }
-  }, async () => listVessels(db).map(vesselToApi));
 
   app.get("/api/timetable-documents", {
     schema: {

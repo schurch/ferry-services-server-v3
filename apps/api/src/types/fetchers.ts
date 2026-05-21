@@ -21,6 +21,10 @@ export type VesselPosition = {
   latitude: number;
   longitude: number;
   lastReceived: string;
+  destinationName?: string;
+  eta?: string;
+  originName?: string;
+  originDepartedAt?: string;
   organisationId: number;
 };
 

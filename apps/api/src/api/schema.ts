@@ -90,6 +90,14 @@ export const LocationResponseSchema = Type.Object({
   weather: Type.Optional(Type.Ref(LocationWeatherResponseSchema))
 }, { $id: "LocationResponse" });
 
+export const VesselVoyageResponseSchema = Type.Object({
+  origin_location: Type.Ref(DepartureDestinationSchema),
+  destination_location: Type.Ref(DepartureDestinationSchema),
+  departed_at: Type.Ref(UTCTimeSchema),
+  eta: Type.Ref(UTCTimeSchema),
+  progress: Type.Optional(Type.Number())
+}, { $id: "VesselVoyageResponse" });
+
 export const VesselResponseSchema = Type.Object({
   mmsi: Type.Integer(),
   name: Type.String(),
@@ -97,7 +105,8 @@ export const VesselResponseSchema = Type.Object({
   course: Type.Optional(Type.Number()),
   latitude: Type.Number(),
   longitude: Type.Number(),
-  last_received: Type.Ref(UTCTimeSchema)
+  last_received: Type.Ref(UTCTimeSchema),
+  voyage: Type.Optional(Type.Ref(VesselVoyageResponseSchema))
 }, { $id: "VesselResponse" });
 
 export const TimetableDocumentResponseSchema = Type.Object({

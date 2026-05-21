@@ -11,6 +11,7 @@ type OrganisationId = number;
 type Mmsi = number;
 
 type MarineTrafficVessel = {
+  SHIP_ID?: unknown;
   MMSI?: unknown;
   SHIPNAME?: unknown;
   LAT?: unknown;
@@ -18,6 +19,18 @@ type MarineTrafficVessel = {
   SPEED?: unknown;
   COURSE?: unknown;
   TIMESTAMP?: unknown;
+};
+
+type MarineTrafficVoyage = {
+  reportedDestination?: unknown;
+  eta?: unknown;
+  etaCalc?: unknown;
+  departurePortId?: unknown;
+  departureTimestamp?: unknown;
+};
+
+type MarineTrafficPort = {
+  name?: unknown;
 };
 
 type VesselFetchResult = VesselPosition | "blocked" | null;
@@ -138,6 +151,28 @@ function parseNumber(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function parseInteger(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === "") {
+    return undefined;
+  }
+
+  const parsed = typeof value === "number" ? value : Number.parseInt(String(value), 10);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+}
+
+function unixTimestampToSql(value: unknown): string | undefined {
+  const seconds = parseInteger(value);
+  if (seconds === undefined) {
+    return undefined;
+  }
+
+  return new Date(seconds * 1000).toISOString().replace("T", " ").slice(0, 19);
+}
+
 function capitaliseWords(value: string): string {
   return value.split(/\s+/).filter(Boolean).map((word) => {
     const upper = word.toUpperCase();
@@ -225,11 +260,91 @@ async function fetchVessel(client: CycleTLSClient, organisationId: OrganisationI
       return null;
     }
 
+    const shipId = parseInteger(value.SHIP_ID);
+    if (shipId !== undefined) {
+      Object.assign(vessel, await fetchVoyageData(client, headers, shipId));
+    }
+
     logger.info({ mmsi: vessel.mmsi, vesselName: vessel.name }, "Fetched vessel");
     return vessel;
   } catch (error) {
     logger.warn({ err: error, mmsi }, "Skipping vessel because fetch failed");
     return null;
+  }
+}
+
+async function fetchVoyageData(
+  client: CycleTLSClient,
+  headers: Record<string, string>,
+  shipId: number
+): Promise<Partial<VesselPosition>> {
+  try {
+    const response = await client.get(`https://www.marinetraffic.com/en/vessels/${shipId}/voyage`, {
+      body: "",
+      headers,
+      timeout: 20,
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15"
+    });
+    const body = await response.text();
+    if (response.status < 200 || response.status >= 300) {
+      logger.warn({ shipId, statusCode: response.status }, "Skipping voyage enrichment because MarineTraffic returned an error");
+      return {};
+    }
+
+    const voyage = JSON.parse(body) as MarineTrafficVoyage;
+    const originName = await resolvePortName(client, headers, voyage.departurePortId);
+
+    return {
+      destinationName: parseText(voyage.reportedDestination),
+      eta: unixTimestampToSql(voyage.eta ?? voyage.etaCalc),
+      originName,
+      originDepartedAt: unixTimestampToSql(voyage.departureTimestamp)
+    };
+  } catch (error) {
+    logger.warn({ err: error, shipId }, "Skipping voyage enrichment because fetch failed");
+    return {};
+  }
+}
+
+const portNameCache = new Map<number, string>();
+
+async function resolvePortName(
+  client: CycleTLSClient,
+  headers: Record<string, string>,
+  portId: unknown
+): Promise<string | undefined> {
+  const parsedPortId = parseInteger(portId);
+  if (parsedPortId === undefined) {
+    return undefined;
+  }
+
+  const cached = portNameCache.get(parsedPortId);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  try {
+    const response = await client.get(`https://www.marinetraffic.com/en/ports/${parsedPortId}`, {
+      body: "",
+      headers,
+      timeout: 20,
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15"
+    });
+    const body = await response.text();
+    if (response.status < 200 || response.status >= 300) {
+      logger.warn({ portId: parsedPortId, statusCode: response.status }, "Skipping port name enrichment because MarineTraffic returned an error");
+      return undefined;
+    }
+
+    const port = JSON.parse(body) as MarineTrafficPort;
+    const name = parseText(port.name);
+    if (name !== undefined) {
+      portNameCache.set(parsedPortId, name);
+    }
+    return name;
+  } catch (error) {
+    logger.warn({ err: error, portId: parsedPortId }, "Skipping port name enrichment because fetch failed");
+    return undefined;
   }
 }
 

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import type Database from "better-sqlite3";
 import type {
   DepartureResponse,
+  LocationReferenceResponse,
   LocationResponse,
   LocationWeatherResponse,
   OrganisationResponse,
@@ -9,6 +10,7 @@ import type {
   ServiceResponse,
   ServiceStatus,
   TimetableDocumentResponse,
+  VesselVoyageResponse,
   VesselResponse
 } from "../types/api.js";
 
@@ -64,6 +66,10 @@ type VesselRow = {
   latitude: number;
   longitude: number;
   last_received: string;
+  destination_name: Nullable<string>;
+  eta: Nullable<string>;
+  origin_name: Nullable<string>;
+  origin_departed_at: Nullable<string>;
 };
 
 type RailDepartureRow = {
@@ -161,7 +167,8 @@ function weatherResponse(row: WeatherRow): LocationWeatherResponse {
   };
 }
 
-function vesselResponse(row: VesselRow): VesselResponse {
+function vesselResponse(row: VesselRow, serviceLocations?: LocationResponse[]): VesselResponse {
+  const voyage = serviceLocations ? vesselVoyageResponse(row, serviceLocations) : undefined;
   return {
     mmsi: row.mmsi,
     name: row.name,
@@ -169,8 +176,92 @@ function vesselResponse(row: VesselRow): VesselResponse {
     course: value(row.course),
     latitude: row.latitude,
     longitude: row.longitude,
-    lastReceived: timestampResponse(row.last_received)
+    lastReceived: timestampResponse(row.last_received),
+    voyage
   };
+}
+
+function vesselVoyageResponse(row: VesselRow, serviceLocations: LocationResponse[]): VesselVoyageResponse | undefined {
+  const originName = value(row.origin_name);
+  const departedAt = optionalTimestampResponse(row.origin_departed_at);
+  const reportedDestinationName = value(row.destination_name);
+  const eta = optionalTimestampResponse(row.eta);
+
+  if (
+    originName === undefined ||
+    departedAt === undefined ||
+    eta === undefined
+  ) {
+    return undefined;
+  }
+
+  const originLocation = matchServiceLocation(serviceLocations, originName);
+  const destinationLocation = reportedDestinationName
+    ? matchServiceLocation(serviceLocations, reportedDestinationName)
+    : undefined;
+  if (originLocation === undefined || destinationLocation === undefined) {
+    return undefined;
+  }
+
+  return {
+    originLocation,
+    destinationLocation,
+    departedAt,
+    eta,
+    progress: computeProgress(originLocation, destinationLocation, row.latitude, row.longitude)
+  };
+}
+
+function computeProgress(
+  origin: LocationReferenceResponse,
+  destination: LocationReferenceResponse,
+  vesselLatitude: number,
+  vesselLongitude: number
+): number | undefined {
+  const meanLatitudeRadians = ((origin.latitude + destination.latitude) / 2) * (Math.PI / 180);
+  const scaleX = 111_320 * Math.cos(meanLatitudeRadians);
+  const scaleY = 110_540;
+
+  const ox = 0;
+  const oy = 0;
+  const dx = (destination.longitude - origin.longitude) * scaleX;
+  const dy = (destination.latitude - origin.latitude) * scaleY;
+  const vx = (vesselLongitude - origin.longitude) * scaleX;
+  const vy = (vesselLatitude - origin.latitude) * scaleY;
+
+  const lengthSquared = (dx * dx) + (dy * dy);
+  if (!Number.isFinite(lengthSquared) || lengthSquared <= 0) {
+    return undefined;
+  }
+
+  const projected = (((vx - ox) * dx) + ((vy - oy) * dy)) / lengthSquared;
+  const clamped = Math.max(0, Math.min(1, projected));
+  return Math.round(clamped * 1000) / 10;
+}
+
+function matchServiceLocation(
+  serviceLocations: LocationResponse[],
+  rawName: string
+): LocationReferenceResponse | undefined {
+  const target = normalizeLocationName(rawName);
+  const match = serviceLocations.find((location) => normalizeLocationName(location.name) === target);
+  return match
+    ? {
+        id: match.id,
+        name: match.name,
+        latitude: match.latitude,
+        longitude: match.longitude
+      }
+    : undefined;
+}
+
+function normalizeLocationName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 function isRecent(timestamp: string, now = new Date()): boolean {
@@ -521,7 +612,7 @@ function createServiceOrganisationLookup(db: Database.Database, serviceId: numbe
   }]]);
 }
 
-function createServiceVesselLookup(db: Database.Database, now = new Date()): Map<number, VesselResponse[]> {
+function createServiceVesselLookup(db: Database.Database, now = new Date()): Map<number, VesselRow[]> {
   const rows = db.prepare(`
     WITH bounding_box AS (
       SELECT
@@ -534,7 +625,22 @@ function createServiceVesselLookup(db: Database.Database, now = new Date()): Map
       JOIN service_locations sl ON l.location_id = sl.location_id
       GROUP BY sl.service_id
     )
-    SELECT s.service_id, v.mmsi, v.name, v.speed, v.course, v.latitude, v.longitude, v.last_received
+    SELECT
+      s.service_id,
+      v.mmsi,
+      v.name,
+      v.speed,
+      v.course,
+      v.latitude,
+      v.longitude,
+      v.last_received,
+      v.destination_name,
+      v.eta,
+      v.origin_name,
+      v.origin_departed_at,
+      v.arrival_name,
+      v.arrival_at,
+      v.progress
     FROM vessels v
     JOIN bounding_box b
     JOIN services s ON s.service_id = b.service_id
@@ -543,19 +649,19 @@ function createServiceVesselLookup(db: Database.Database, now = new Date()): Map
       AND s.organisation_id = v.organisation_id
   `).all() as VesselRow[];
 
-  const lookup = new Map<number, VesselResponse[]>();
+  const lookup = new Map<number, VesselRow[]>();
   for (const row of rows) {
     if (row.service_id === undefined || !isRecent(row.last_received, now)) {
       continue;
     }
     const vessels = lookup.get(row.service_id) ?? [];
-    vessels.push(vesselResponse(row));
+    vessels.push(row);
     lookup.set(row.service_id, vessels);
   }
   return lookup;
 }
 
-function createSingleServiceVesselLookup(db: Database.Database, serviceId: number, now = new Date()): Map<number, VesselResponse[]> {
+function createSingleServiceVesselLookup(db: Database.Database, serviceId: number, now = new Date()): Map<number, VesselRow[]> {
   const rows = db.prepare(`
     WITH bounding_box AS (
       SELECT
@@ -567,7 +673,22 @@ function createSingleServiceVesselLookup(db: Database.Database, serviceId: numbe
       JOIN service_locations sl ON l.location_id = sl.location_id
       WHERE sl.service_id = ?
     )
-    SELECT ? AS service_id, v.mmsi, v.name, v.speed, v.course, v.latitude, v.longitude, v.last_received
+    SELECT
+      ? AS service_id,
+      v.mmsi,
+      v.name,
+      v.speed,
+      v.course,
+      v.latitude,
+      v.longitude,
+      v.last_received,
+      v.destination_name,
+      v.eta,
+      v.origin_name,
+      v.origin_departed_at,
+      v.arrival_name,
+      v.arrival_at,
+      v.progress
     FROM vessels v
     JOIN services s ON s.service_id = ?
     JOIN bounding_box b
@@ -576,7 +697,7 @@ function createSingleServiceVesselLookup(db: Database.Database, serviceId: numbe
       AND s.organisation_id = v.organisation_id
   `).all(serviceId, serviceId, serviceId) as VesselRow[];
 
-  const vessels = rows.filter((row) => isRecent(row.last_received, now)).map(vesselResponse);
+  const vessels = rows.filter((row) => isRecent(row.last_received, now));
   return vessels.length > 0 ? new Map([[serviceId, vessels]]) : new Map();
 }
 
@@ -586,21 +707,22 @@ function serviceResponse(
     scheduledServices: Set<number>;
     locations: Map<number, LocationResponse[]>;
     organisations: Map<number, OrganisationResponse>;
-    vessels: Map<number, VesselResponse[]>;
+    vessels: Map<number, VesselRow[]>;
     timetableDocuments?: Map<number, TimetableDocumentResponse[]>;
   },
   now = new Date()
 ): ServiceResponse {
+  const locations = lookups.locations.get(row.service_id) ?? [];
   return {
     serviceId: row.service_id,
     area: row.area,
     route: row.route,
     status: staleStatus(row.status, row.updated, now),
-    locations: lookups.locations.get(row.service_id) ?? [],
+    locations,
     additionalInfo: value(row.additional_info),
     disruptionReason: value(row.disruption_reason),
     lastUpdatedDate: optionalTimestampResponse(row.last_updated_date),
-    vessels: lookups.vessels.get(row.service_id) ?? [],
+    vessels: (lookups.vessels.get(row.service_id) ?? []).map((vessel) => vesselResponse(vessel, locations)),
     operator: lookups.organisations.get(row.service_id),
     scheduledDeparturesAvailable: lookups.scheduledServices.has(row.service_id),
     updated: timestampResponse(row.updated),
@@ -1312,16 +1434,6 @@ export function listInstallationServices(db: Database.Database, installationId: 
   };
 
   return rows.map((row) => serviceResponse(row, lookups, now));
-}
-
-export function listVessels(db: Database.Database): VesselResponse[] {
-  const now = new Date();
-  const rows = db.prepare(`
-    SELECT mmsi, name, speed, course, latitude, longitude, last_received
-    FROM vessels
-  `).all() as VesselRow[];
-
-  return rows.filter((row) => isRecent(row.last_received, now)).map(vesselResponse);
 }
 
 export function listTimetableDocuments(db: Database.Database, serviceId?: number): TimetableDocumentResponse[] {

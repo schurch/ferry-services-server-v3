@@ -74,6 +74,15 @@ function departureToApi(departure: { destination: LocationResponse; departure: s
   });
 }
 
+function locationReferenceToApi(location: { id: number; name: string; latitude: number; longitude: number }): Record<string, unknown> {
+  return {
+    id: location.id,
+    name: location.name,
+    latitude: location.latitude,
+    longitude: location.longitude
+  };
+}
+
 export function vesselToApi(vessel: VesselResponse): Record<string, unknown> {
   return withoutUndefined({
     mmsi: vessel.mmsi,
@@ -82,7 +91,16 @@ export function vesselToApi(vessel: VesselResponse): Record<string, unknown> {
     course: vessel.course,
     latitude: vessel.latitude,
     longitude: vessel.longitude,
-    last_received: vessel.lastReceived
+    last_received: vessel.lastReceived,
+    voyage: vessel.voyage
+      ? {
+          origin_location: locationReferenceToApi(vessel.voyage.originLocation),
+          destination_location: locationReferenceToApi(vessel.voyage.destinationLocation),
+          departed_at: vessel.voyage.departedAt,
+          eta: vessel.voyage.eta,
+          progress: vessel.voyage.progress
+        }
+      : undefined
   });
 }
 

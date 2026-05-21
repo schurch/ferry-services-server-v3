@@ -62,6 +62,21 @@ export type DepartureResponse = {
   notes?: string;
 };
 
+export type LocationReferenceResponse = {
+  id: number;
+  name: string;
+  latitude: number;
+  longitude: number;
+};
+
+export type VesselVoyageResponse = {
+  originLocation: LocationReferenceResponse;
+  destinationLocation: LocationReferenceResponse;
+  departedAt: string;
+  eta: string;
+  progress?: number;
+};
+
 export type VesselResponse = {
   mmsi: number;
   name: string;
@@ -70,6 +85,7 @@ export type VesselResponse = {
   latitude: number;
   longitude: number;
   lastReceived: string;
+  voyage?: VesselVoyageResponse;
 };
 
 export type TimetableDocumentResponse = {
