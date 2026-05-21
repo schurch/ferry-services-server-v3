@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { humanDate } from "../src/jobs/timetable-document-dates.js";
+import { humanDate } from "../src/jobs/timetable-document-fetcher.js";
 
 describe("timetable document date formatting", () => {
   it("formats ISO dates for people", () => {

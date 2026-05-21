@@ -1,15 +1,11 @@
 import "dotenv/config";
 import crypto from "node:crypto";
-import { parse } from "node-html-parser";
+import { pathToFileURL } from "node:url";
+import { parse, type HTMLElement } from "node-html-parser";
 import { openDatabase } from "../db/database.js";
 import { saveTimetableDocuments } from "../db/timetable-documents.js";
 import { logger } from "../logger.js";
 import type { ScrapedTimetableDocument } from "../types/fetchers.js";
-import { humanDate } from "./timetable-document-dates.js";
-import { hasOnlyHistoricalYears, isExpiredValidityWindow } from "./timetable-document-filters.js";
-import { htmlText } from "./timetable-document-html.js";
-import { orkneyServiceIdsForDocument } from "./timetable-document-service-mapping.js";
-import { normalizeTimetableDocumentTitle } from "./timetable-document-titles.js";
 
 type TimetableDocumentSource = {
   organisationId: number;
@@ -44,6 +40,11 @@ type CalMacTimetablesResponse = {
   data?: {
     timetables?: CalMacTimetable[];
   };
+};
+
+export type TimetableDocumentCandidate = {
+  title: string;
+  url: string;
 };
 
 const requestTimeoutMs = 30_000;
@@ -101,6 +102,10 @@ function nowSql(): string {
   return new Date().toISOString().replace("T", " ").slice(0, 19);
 }
 
+function dateOnly(value: unknown): string | null {
+  return typeof value === "string" ? value.split("T")[0] ?? value : null;
+}
+
 function text(value: string): string {
   return value.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -115,6 +120,124 @@ function replaceAll(value: string, oldValue: string, newValue: string): string {
 
 function normalizeCalMacRouteName(value: string): string {
   return lower(text(replaceAll(replaceAll(value, "–", "-"), "\u00a0", " ")));
+}
+
+function fileNameTitle(url: string): string {
+  const path = url.split("?")[0] ?? url;
+  const fileName = path.split("/").filter(Boolean).at(-1) ?? path;
+  return text(fileName.replace(/\.pdf$/i, "").replace(/[^a-z0-9]+/gi, " "));
+}
+
+function stripPdfSizeText(value: string): string {
+  return value.replace(/\([^)]*pdf,[^)]*\)/gi, "");
+}
+
+function cleanupLinkTitle(value: string): string {
+  return text(
+    stripPdfSizeText(value)
+      .replace(/opens? in new window/gi, "")
+      .replace(/^download a printable\s+/i, "")
+      .replace(/\s+sheet$/i, "")
+      .replace(/\s*pdf$/i, "")
+  );
+}
+
+function isGenericTimetableTitle(value: string): boolean {
+  return [
+    "timetable",
+    "imetable",
+    "download timetable",
+    "download",
+    "print this timetable"
+  ].includes(lower(text(value)));
+}
+
+function yearsIn(value: string): number[] {
+  return [...value.matchAll(/\b20\d{2}\b/g)].map((match) => Number.parseInt(match[0], 10));
+}
+
+function normalizedServiceDocument(value: string): string {
+  return lower(value).replace(/&/g, "and").replace(/\s+/g, " ").trim();
+}
+
+export function humanDate(value: unknown): string | null {
+  const date = dateOnly(value);
+  if (!date) {
+    return null;
+  }
+
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC"
+  }).format(parsed);
+}
+
+export function normalizeTimetableDocumentTitle(title: string, url: string, fallbackTitle?: string | null): string {
+  const cleanedTitle = cleanupLinkTitle(title);
+  if (cleanedTitle.length < 3 || cleanedTitle.length > 160 || isGenericTimetableTitle(cleanedTitle)) {
+    return fallbackTitle ? text(fallbackTitle) : fileNameTitle(url);
+  }
+
+  return cleanedTitle;
+}
+
+export function htmlText(element: HTMLElement): string {
+  // textContent decodes HTML entities such as &amp;, unlike rawText/innerText.
+  return text(element.textContent);
+}
+
+export function hasOnlyHistoricalYears(candidate: TimetableDocumentCandidate, now = new Date()): boolean {
+  const years = yearsIn(`${candidate.title} ${candidate.url}`);
+  if (years.length === 0) {
+    return false;
+  }
+
+  // Seasonal timetables often span adjacent years (for example winter 2025/26),
+  // so keep the current year plus the immediately preceding year.
+  return Math.max(...years) < now.getUTCFullYear() - 1;
+}
+
+export function isExpiredValidityWindow(validUntil: unknown, now = new Date()): boolean {
+  const endDate = dateOnly(validUntil);
+  if (!endDate) {
+    return false;
+  }
+
+  return endDate < now.toISOString().slice(0, 10);
+}
+
+export function orkneyServiceIdsForDocument(document: TimetableDocumentCandidate): number[] {
+  const value = normalizedServiceDocument(`${document.title} ${document.url}`);
+
+  if (value.includes("north ronaldsay") || value.includes("nordic sea")) {
+    return [];
+  }
+  if (value.includes("eday") && value.includes("sanday") && value.includes("stronsay")) {
+    return [4000, 4001, 4002];
+  }
+  if (value.includes("westray") && value.includes("papa westray")) {
+    return [4003, 4008];
+  }
+  if (value.includes("south isles") || (value.includes("hoy") && value.includes("flotta"))) {
+    return [4006];
+  }
+  if (value.includes("rousay") && value.includes("egilsay") && value.includes("wyre")) {
+    return [4007];
+  }
+  if (value.includes("shapinsay")) {
+    return [4004];
+  }
+  if (value.includes("graemsay") && value.includes("hoy")) {
+    return [4005];
+  }
+  return [];
 }
 
 async function fetchText(url: string): Promise<string> {
@@ -380,4 +503,6 @@ async function main(): Promise<void> {
   }
 }
 
-await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}

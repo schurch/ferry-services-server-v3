@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { parse } from "node-html-parser";
-import { htmlText } from "../src/jobs/timetable-document-html.js";
+import { htmlText } from "../src/jobs/timetable-document-fetcher.js";
 
 describe("timetable document HTML text extraction", () => {
   it("decodes HTML entities in link text", () => {

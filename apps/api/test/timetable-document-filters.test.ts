@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { hasOnlyHistoricalYears, isExpiredValidityWindow } from "../src/jobs/timetable-document-filters.js";
+import { hasOnlyHistoricalYears, isExpiredValidityWindow } from "../src/jobs/timetable-document-fetcher.js";
 
 describe("timetable document freshness filters", () => {
   const now = new Date("2026-05-18T00:00:00.000Z");

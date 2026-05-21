@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { normalizeTimetableDocumentTitle } from "../src/jobs/timetable-document-titles.js";
+import { normalizeTimetableDocumentTitle } from "../src/jobs/timetable-document-fetcher.js";
 
 describe("timetable document title normalization", () => {
   it("uses the filename when the link text is only a call to action", () => {

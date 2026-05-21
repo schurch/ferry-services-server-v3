@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { orkneyServiceIdsForDocument } from "../src/jobs/timetable-document-service-mapping.js";
+import { orkneyServiceIdsForDocument } from "../src/jobs/timetable-document-fetcher.js";
 
 describe("Orkney timetable document service mapping", () => {
   it("maps north-isles timetable groups only to the matching app services", () => {
