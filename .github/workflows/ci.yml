@@ -72,21 +72,19 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
           APP_ROOT: /home/stefan/ferry-services-server-v3
         run: |
           set -euo pipefail
           DEPLOY_HOST="${DEPLOY_HOST:-server}"
           DEPLOY_USER="${DEPLOY_USER:-stefan}"
-          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$APP_ROOT/scripts'"
-          scp -P "$DEPLOY_PORT" compose.yaml "$DEPLOY_USER@$DEPLOY_HOST:$APP_ROOT/compose.yaml"
-          scp -P "$DEPLOY_PORT" scripts/deploy-docker.sh "$DEPLOY_USER@$DEPLOY_HOST:$APP_ROOT/scripts/deploy-docker.sh"
+          tailscale ssh "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$APP_ROOT/scripts'"
+          tailscale ssh "$DEPLOY_USER@$DEPLOY_HOST" "cat > '$APP_ROOT/compose.yaml'" < compose.yaml
+          tailscale ssh "$DEPLOY_USER@$DEPLOY_HOST" "cat > '$APP_ROOT/scripts/deploy-docker.sh'" < scripts/deploy-docker.sh
 
       - name: Deploy docker image
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
           APP_ROOT: /home/stefan/ferry-services-server-v3
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -94,7 +92,7 @@ jobs:
           set -euo pipefail
           DEPLOY_HOST="${DEPLOY_HOST:-server}"
           DEPLOY_USER="${DEPLOY_USER:-stefan}"
-          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+          tailscale ssh "$DEPLOY_USER@$DEPLOY_HOST" \
             "APP_ROOT='$APP_ROOT' IMAGE_TAG='${{ github.sha }}' DOCKERHUB_USERNAME='$DOCKERHUB_USERNAME' DOCKERHUB_TOKEN='$DOCKERHUB_TOKEN' bash -s" <<'REMOTE'
           set -euo pipefail
           chmod +x "$APP_ROOT/scripts/deploy-docker.sh"

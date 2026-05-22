@@ -188,7 +188,6 @@ Optional overrides:
 ```text
 DEPLOY_HOST # defaults to server
 DEPLOY_USER # defaults to stefan
-DEPLOY_PORT # optional, defaults to 22
 ```
 
 When using Tailscale SSH for deploys, the GitHub Actions node should join the tailnet as `tag:ci`, the server should be tagged `tag:prod`, and your tailnet policy should allow `tag:ci` to SSH to `tag:prod` as user `stefan` with `action: "accept"`.
