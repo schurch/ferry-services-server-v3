@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_ROOT="${APP_ROOT:-/home/stefanchurch/ferry-services-server-v3}"
+APP_ROOT="${APP_ROOT:-/home/stefan/ferry-services-server-v3}"
 cd "$APP_ROOT"
 
 if ! command -v sqlite3 >/dev/null 2>&1; then

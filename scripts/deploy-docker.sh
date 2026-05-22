@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_ROOT="${APP_ROOT:-/home/stefanchurch/ferry-services-server-v3}"
+APP_ROOT="${APP_ROOT:-/home/stefan/ferry-services-server-v3}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 DOCKER_IMAGE="${DOCKER_IMAGE:-stefanchurch/ferry-services:${IMAGE_TAG}}"
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_ROOT="${APP_ROOT:-/home/stefanchurch/ferry-services-server-v3}"
+APP_ROOT="${APP_ROOT:-/home/stefan/ferry-services-server-v3}"
 
 if [ $# -ne 1 ]; then
   echo "Usage: $0 /absolute/or/relative/path/to/backup.sqlite3" >&2

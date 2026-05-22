@@ -81,7 +81,7 @@ For local API work, copy `apps/api/.env.example` to `.env` at the repository roo
 Production keeps runtime state and secrets on the host:
 
 ```text
-/home/stefanchurch/ferry-services-server-v3/
+/home/stefan/ferry-services-server-v3/
   .env
   data/
     ferry-services.sqlite3
@@ -156,13 +156,13 @@ Production pulls the prebuilt image with Docker Compose. The VPS does not run `n
 Manual deploy:
 
 ```bash
-APP_ROOT=/home/stefanchurch/ferry-services-server-v3 IMAGE_TAG=latest scripts/deploy-docker.sh
+APP_ROOT=/home/stefan/ferry-services-server-v3 IMAGE_TAG=latest scripts/deploy-docker.sh
 ```
 
 Production database backup:
 
 ```bash
-APP_ROOT=/home/stefanchurch/ferry-services-server-v3 scripts/backup-prod-db.sh
+APP_ROOT=/home/stefan/ferry-services-server-v3 scripts/backup-prod-db.sh
 ```
 
 That uses host `sqlite3` and SQLite's `.backup` command to write a hot backup to `data/backups/ferry-services-<timestamp>.sqlite3` by default. Pass a path argument to override the output file.
@@ -170,7 +170,7 @@ That uses host `sqlite3` and SQLite's `.backup` command to write a hot backup to
 Production database restore:
 
 ```bash
-APP_ROOT=/home/stefanchurch/ferry-services-server-v3 scripts/restore-prod-db.sh data/backups/ferry-services-2026-05-16T18-00-00Z.sqlite3
+APP_ROOT=/home/stefan/ferry-services-server-v3 scripts/restore-prod-db.sh data/backups/ferry-services-2026-05-16T18-00-00Z.sqlite3
 ```
 
 That stops the compose stack, snapshots the current live DB to a `*.pre-restore-<timestamp>.sqlite3` file next to it, restores the chosen backup, removes any stale SQLite WAL/SHM sidecars, and starts the stack again.
