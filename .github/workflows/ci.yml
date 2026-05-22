@@ -65,21 +65,8 @@ jobs:
         uses: tailscale/github-action@v4
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          tags: tag:ci
           ping: server
-
-      - name: Configure SSH
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || 22 }}
-        run: |
-          set -euo pipefail
-          DEPLOY_HOST="${DEPLOY_HOST:-server}"
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -p "$DEPLOY_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
       - name: Upload compose and deploy script
         env:
@@ -91,9 +78,9 @@ jobs:
           set -euo pipefail
           DEPLOY_HOST="${DEPLOY_HOST:-server}"
           DEPLOY_USER="${DEPLOY_USER:-stefan}"
-          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$APP_ROOT/scripts'"
-          scp -i ~/.ssh/deploy_key -P "$DEPLOY_PORT" compose.yaml "$DEPLOY_USER@$DEPLOY_HOST:$APP_ROOT/compose.yaml"
-          scp -i ~/.ssh/deploy_key -P "$DEPLOY_PORT" scripts/deploy-docker.sh "$DEPLOY_USER@$DEPLOY_HOST:$APP_ROOT/scripts/deploy-docker.sh"
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$APP_ROOT/scripts'"
+          scp -P "$DEPLOY_PORT" compose.yaml "$DEPLOY_USER@$DEPLOY_HOST:$APP_ROOT/compose.yaml"
+          scp -P "$DEPLOY_PORT" scripts/deploy-docker.sh "$DEPLOY_USER@$DEPLOY_HOST:$APP_ROOT/scripts/deploy-docker.sh"
 
       - name: Deploy docker image
         env:
@@ -107,7 +94,7 @@ jobs:
           set -euo pipefail
           DEPLOY_HOST="${DEPLOY_HOST:-server}"
           DEPLOY_USER="${DEPLOY_USER:-stefan}"
-          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+          ssh -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
             "APP_ROOT='$APP_ROOT' IMAGE_TAG='${{ github.sha }}' DOCKERHUB_USERNAME='$DOCKERHUB_USERNAME' DOCKERHUB_TOKEN='$DOCKERHUB_TOKEN' bash -s" <<'REMOTE'
           set -euo pipefail
           chmod +x "$APP_ROOT/scripts/deploy-docker.sh"
