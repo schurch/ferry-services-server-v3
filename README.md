@@ -178,12 +178,18 @@ That stops the compose stack, snapshots the current live DB to a `*.pre-restore-
 The GitHub Actions deploy job expects:
 
 ```text
-DEPLOY_HOST
-DEPLOY_USER
+TAILSCALE_AUTHKEY
 DEPLOY_SSH_KEY
-DEPLOY_PORT # optional, defaults to 22
 DOCKERHUB_USERNAME
 DOCKERHUB_TOKEN
+```
+
+Optional overrides:
+
+```text
+DEPLOY_HOST # defaults to server
+DEPLOY_USER # defaults to stefan
+DEPLOY_PORT # optional, defaults to 22
 ```
 
 The stack contains:
