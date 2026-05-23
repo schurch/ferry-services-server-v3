@@ -17,16 +17,16 @@ function withoutUndefined<T extends Record<string, unknown>>(value: T): T {
   return value;
 }
 
-function organisationToApi(organisation: OrganisationResponse, options: { includeDetails?: boolean } = {}): Record<string, unknown> {
+function organisationToApi(organisation: OrganisationResponse): Record<string, unknown> {
   return withoutUndefined({
     id: organisation.id,
     name: organisation.name,
-    website: options.includeDetails === false ? undefined : organisation.website,
-    local_number: options.includeDetails === false ? undefined : organisation.localNumber,
-    international_number: options.includeDetails === false ? undefined : organisation.internationalNumber,
-    email: options.includeDetails === false ? undefined : organisation.email,
-    x: options.includeDetails === false ? undefined : organisation.x,
-    facebook: options.includeDetails === false ? undefined : organisation.facebook
+    website: organisation.website,
+    local_number: organisation.localNumber,
+    international_number: organisation.internationalNumber,
+    email: organisation.email,
+    x: organisation.x,
+    facebook: organisation.facebook
   });
 }
 
@@ -122,7 +122,7 @@ export function timetableDocumentToApi(document: TimetableDocumentResponse): Rec
 
 export function serviceToApi(
   service: ServiceResponse,
-  options: { includeAdditionalInfo?: boolean; includeLocationDetails?: boolean; includeOperatorDetails?: boolean; includeVessels?: boolean } = {}
+  options: { includeAdditionalInfo?: boolean; includeLocationDetails?: boolean; includeVessels?: boolean } = {}
 ): Record<string, unknown> {
   return withoutUndefined({
     service_id: service.serviceId,
@@ -134,7 +134,7 @@ export function serviceToApi(
     disruption_reason: service.disruptionReason,
     last_updated_date: service.lastUpdatedDate,
     vessels: options.includeVessels === false ? [] : service.vessels.map(vesselToApi),
-    operator: service.operator ? organisationToApi(service.operator, { includeDetails: options.includeOperatorDetails }) : undefined,
+    operator: service.operator ? organisationToApi(service.operator) : undefined,
     scheduled_departures_available: service.scheduledDeparturesAvailable,
     updated: service.updated,
     timetable_documents: service.timetableDocuments?.map(timetableDocumentToApi)

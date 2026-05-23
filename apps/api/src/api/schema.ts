@@ -47,11 +47,6 @@ export const OrganisationResponseSchema = Type.Object({
   facebook: Type.Optional(Type.String())
 }, { $id: "OrganisationResponse" });
 
-export const OrganisationSummaryResponseSchema = Type.Object({
-  id: Type.Integer(),
-  name: Type.String()
-}, { $id: "OrganisationSummaryResponse" });
-
 export const LocationWeatherResponseSchema = Type.Object({
   icon: Type.String(),
   description: Type.String(),
@@ -145,7 +140,7 @@ export const ServiceResponseSchema = Type.Object({
   disruption_reason: Type.Optional(Type.String()),
   last_updated_date: Type.Optional(Type.Ref(UTCTimeSchema)),
   vessels: Type.Optional(Type.Array(Type.Ref(VesselResponseSchema))),
-  operator: Type.Optional(Type.Ref(OrganisationSummaryResponseSchema)),
+  operator: Type.Optional(Type.Ref(OrganisationResponseSchema)),
   scheduled_departures_available: Type.Boolean(),
   updated: Type.Ref(UTCTimeSchema),
   timetable_documents: Type.Optional(Type.Array(Type.Ref(TimetableDocumentResponseSchema)))
@@ -160,7 +155,7 @@ export const ServiceListResponseSchema = Type.Object({
   disruption_reason: Type.Optional(Type.String()),
   last_updated_date: Type.Optional(Type.Ref(UTCTimeSchema)),
   vessels: Type.Optional(Type.Array(Type.Ref(VesselResponseSchema))),
-  operator: Type.Optional(Type.Ref(OrganisationSummaryResponseSchema)),
+  operator: Type.Optional(Type.Ref(OrganisationResponseSchema)),
   scheduled_departures_available: Type.Boolean(),
   updated: Type.Ref(UTCTimeSchema)
 }, { $id: "ServiceListResponse" });

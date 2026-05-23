@@ -31,7 +31,6 @@ import {
   LocationResponseSchema,
   LocationWeatherResponseSchema,
   LocationSummaryResponseSchema,
-  OrganisationSummaryResponseSchema,
   OrganisationResponseSchema,
   PushStatusSchema,
   RailDepartureResponseSchema,
@@ -153,7 +152,6 @@ function addSchemas(app: FastifyInstance): void {
     CreateInstallationRequestSchema,
     AddServiceRequestSchema,
     OrganisationResponseSchema,
-    OrganisationSummaryResponseSchema,
     LocationWeatherResponseSchema,
     LocationSummaryResponseSchema,
     RailDepartureResponseSchema,
@@ -202,7 +200,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return listInstallationServices(db, installationId).map((service) => serviceToApi(service, {
       includeAdditionalInfo: false,
       includeLocationDetails: false,
-      includeOperatorDetails: false,
       includeVessels: false
     }));
   }
@@ -269,7 +266,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }, async () => listServices(db).map((service) => serviceToApi(service, {
     includeAdditionalInfo: false,
     includeLocationDetails: false,
-    includeOperatorDetails: false,
     includeVessels: false
   })));
 
