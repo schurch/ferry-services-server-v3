@@ -1,12 +1,12 @@
 import "dotenv/config";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { pipeline } from "node:stream/promises";
+import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 import { Client } from "basic-ftp";
 import type Database from "better-sqlite3";
 import { HTMLElement, parse } from "node-html-parser";
-import * as yauzl from "yauzl";
 import { config } from "../config.js";
 import { logger } from "../logger.js";
 import { openDatabase } from "../db/database.js";
@@ -40,6 +40,7 @@ type FtpConfig = {
 };
 
 const ingestWorkingDirectory = path.resolve("data/transxchange-ingest");
+const execFileAsync = promisify(execFile);
 
 type PreparedIngestDirectory = {
   directory: string;
@@ -492,88 +493,10 @@ async function downloadFtpFile(ftp: FtpConfig, remoteFilePath: string, localFile
   }
 }
 
-function safeExtractPath(outputDirectory: string, entryName: string): string {
-  const destination = path.resolve(outputDirectory, entryName);
-  const root = path.resolve(outputDirectory);
-  if (destination !== root && !destination.startsWith(`${root}${path.sep}`)) {
-    throw new Error(`Refusing to extract ZIP entry outside target directory: ${entryName}`);
-  }
-  return destination;
-}
-
-function openZipFile(zipFilePath: string): Promise<yauzl.ZipFile> {
-  return new Promise((resolve, reject) => {
-    yauzl.open(zipFilePath, { lazyEntries: true }, (error, zipfile) => {
-      if (error) reject(error);
-      else if (!zipfile) reject(new Error(`Could not open ZIP file: ${zipFilePath}`));
-      else resolve(zipfile);
-    });
-  });
-}
-
-function openZipEntryStream(zipfile: yauzl.ZipFile, entry: yauzl.Entry): Promise<NodeJS.ReadableStream> {
-  return new Promise((resolve, reject) => {
-    zipfile.openReadStream(entry, (error, stream) => {
-      if (error) reject(error);
-      else if (!stream) reject(new Error(`Could not read ZIP entry: ${entry.fileName}`));
-      else resolve(stream);
-    });
-  });
-}
-
 async function extractZip(zipFilePath: string, outputDirectory: string): Promise<void> {
   fs.rmSync(outputDirectory, { recursive: true, force: true });
   fs.mkdirSync(outputDirectory, { recursive: true });
-
-  const zipfile = await openZipFile(zipFilePath);
-  try {
-    await new Promise<void>((resolve, reject) => {
-      let settled = false;
-      let processedEntries = 0;
-      const finish = (error?: Error): void => {
-        if (settled) return;
-        settled = true;
-        if (error) reject(error);
-        else resolve();
-      };
-
-      if (zipfile.entryCount === 0) {
-        finish();
-        return;
-      }
-
-      zipfile.on("entry", (entry) => {
-        void (async () => {
-          const invalidFileName = yauzl.validateFileName(entry.fileName);
-          if (invalidFileName) {
-            finish(new Error(`Invalid ZIP entry name ${entry.fileName}: ${invalidFileName}`));
-            return;
-          }
-
-          const destination = safeExtractPath(outputDirectory, entry.fileName);
-          if (entry.fileName.endsWith("/")) {
-            fs.mkdirSync(destination, { recursive: true });
-          } else {
-            fs.mkdirSync(path.dirname(destination), { recursive: true });
-            await pipeline(await openZipEntryStream(zipfile, entry), fs.createWriteStream(destination));
-          }
-
-          processedEntries += 1;
-          if (processedEntries >= zipfile.entryCount) {
-            finish();
-          } else if (!settled) {
-            zipfile.readEntry();
-          }
-        })().catch((error: unknown) => {
-          finish(error instanceof Error ? error : new Error(String(error)));
-        });
-      });
-      zipfile.once("error", (error) => finish(error));
-      zipfile.readEntry();
-    });
-  } finally {
-    zipfile.close();
-  }
+  await execFileAsync("unzip", ["-q", zipFilePath, "-d", outputDirectory], { maxBuffer: 1024 * 1024 * 10 });
 }
 
 async function prepareIngestDirectory(): Promise<PreparedIngestDirectory> {

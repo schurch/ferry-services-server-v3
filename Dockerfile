@@ -46,7 +46,7 @@ WORKDIR /app/apps/api
 ENV NODE_ENV=production
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates tzdata \
+  && apt-get install -y --no-install-recommends ca-certificates tzdata unzip \
   && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g npm@${NPM_VERSION}
