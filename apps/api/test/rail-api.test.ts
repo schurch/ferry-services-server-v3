@@ -88,6 +88,57 @@ describe("Rail departure API formatting", () => {
     assert.ok(new Date(estimatedEta as string) > new Date("2026-05-14T10:55:00.000Z"));
   });
 
+  it("shows recent vessels when voyage data is incomplete", () => {
+    freezeNow("2026-05-14T11:00:00.000Z");
+
+    currentDb = createTestDatabase();
+    const db = currentDb.db;
+    seedTimestampContractScenario(db);
+
+    db.prepare(`
+      UPDATE vessels
+      SET origin_name = ?,
+          destination_name = NULL,
+          origin_departed_at = NULL
+      WHERE mmsi = ?
+    `).run("Unknown Pier", 123456789);
+
+    assert.equal(requireService(db, 9100).vessels.length, 1);
+    assert.equal(requireService(db, 9100).vessels[0]?.voyage, undefined);
+  });
+
+  it("shows recent vessels without voyage data when the voyage is complete", () => {
+    freezeNow("2026-05-14T11:00:00.000Z");
+
+    currentDb = createTestDatabase();
+    const db = currentDb.db;
+    seedTimestampContractScenario(db);
+
+    db.prepare(`
+      UPDATE vessels
+      SET latitude = ?,
+          longitude = ?,
+          last_received = ?,
+          destination_name = ?,
+          eta = ?,
+          origin_name = ?,
+          origin_departed_at = ?
+      WHERE mmsi = ?
+    `).run(
+      58.832021233320255,
+      -2.9622400477352535,
+      "2026-05-14 10:55:00",
+      "St Margaret's Hope",
+      "2026-05-14 10:45:00",
+      "Gills Bay",
+      "2026-05-14 10:20:00",
+      123456789
+    );
+
+    assert.equal(requireService(db, 9100).vessels.length, 1);
+    assert.equal(requireService(db, 9100).vessels[0]?.voyage, undefined);
+  });
+
   it("uses scheduled arrival as vessel ETA when the voyage matches a departure", () => {
     freezeNow("2026-03-16T09:45:00.000Z");
 

@@ -183,14 +183,23 @@ function vesselResponse(row: VesselRow, serviceLocations?: LocationResponse[], n
 
 function serviceVesselResponse(row: VesselRow, serviceLocations: LocationResponse[], now: Date): VesselResponse | undefined {
   const voyage = vesselVoyageResponse(row, serviceLocations, now);
-  const hasVoyageIdentity = row.origin_name !== null || row.destination_name !== null || row.origin_departed_at !== null;
-  if (hasVoyageIdentity && voyage === undefined) {
+  if (voyage === undefined && hasMismatchedRouteIdentity(row, serviceLocations)) {
     return undefined;
   }
-  if (voyage && isCompletedVoyage(row, voyage, now)) {
-    return undefined;
+  return vesselResponse(row, voyage && !isCompletedVoyage(row, voyage, now) ? serviceLocations : undefined, now);
+}
+
+function hasMismatchedRouteIdentity(row: VesselRow, serviceLocations: LocationResponse[]): boolean {
+  const originName = value(row.origin_name);
+  const destinationName = value(row.destination_name);
+  if (originName === undefined || destinationName === undefined) {
+    return false;
   }
-  return vesselResponse(row, serviceLocations, now);
+
+  const originLocation = matchServiceLocation(serviceLocations, originName);
+  const destinationLocation = matchServiceLocation(serviceLocations, destinationName)
+    ?? routeShorthandDestination(serviceLocations, originLocation, destinationName);
+  return originLocation === undefined || destinationLocation === undefined;
 }
 
 function vesselVoyageResponse(row: VesselRow, serviceLocations: LocationResponse[], now = new Date()): VesselVoyageResponse | undefined {
