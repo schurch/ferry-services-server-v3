@@ -167,8 +167,8 @@ function weatherResponse(row: WeatherRow): LocationWeatherResponse {
   };
 }
 
-function vesselResponse(row: VesselRow, serviceLocations?: LocationResponse[]): VesselResponse {
-  const voyage = serviceLocations ? vesselVoyageResponse(row, serviceLocations) : undefined;
+function vesselResponse(row: VesselRow, serviceLocations?: LocationResponse[], now = new Date()): VesselResponse {
+  const voyage = serviceLocations ? vesselVoyageResponse(row, serviceLocations, now) : undefined;
   return {
     mmsi: row.mmsi,
     name: row.name,
@@ -181,16 +181,27 @@ function vesselResponse(row: VesselRow, serviceLocations?: LocationResponse[]): 
   };
 }
 
-function vesselVoyageResponse(row: VesselRow, serviceLocations: LocationResponse[]): VesselVoyageResponse | undefined {
+function serviceVesselResponse(row: VesselRow, serviceLocations: LocationResponse[], now: Date): VesselResponse | undefined {
+  const voyage = vesselVoyageResponse(row, serviceLocations, now);
+  const hasVoyageIdentity = row.origin_name !== null || row.destination_name !== null || row.origin_departed_at !== null;
+  if (hasVoyageIdentity && voyage === undefined) {
+    return undefined;
+  }
+  if (voyage && isCompletedVoyage(row, voyage, now)) {
+    return undefined;
+  }
+  return vesselResponse(row, serviceLocations, now);
+}
+
+function vesselVoyageResponse(row: VesselRow, serviceLocations: LocationResponse[], now = new Date()): VesselVoyageResponse | undefined {
   const originName = value(row.origin_name);
   const departedAt = optionalTimestampResponse(row.origin_departed_at);
   const reportedDestinationName = value(row.destination_name);
-  const eta = optionalTimestampResponse(row.eta);
+  const reportedEta = optionalTimestampResponse(row.eta);
 
   if (
     originName === undefined ||
-    departedAt === undefined ||
-    eta === undefined
+    departedAt === undefined
   ) {
     return undefined;
   }
@@ -204,13 +215,76 @@ function vesselVoyageResponse(row: VesselRow, serviceLocations: LocationResponse
     return undefined;
   }
 
+  const progress = computeProgress(originLocation, destinationLocation, row.latitude, row.longitude);
   return {
     originLocation,
     destinationLocation,
     departedAt,
-    eta,
-    progress: computeProgress(originLocation, destinationLocation, row.latitude, row.longitude)
+    eta: reportedEta ?? scheduledEta(serviceLocations, originLocation, destinationLocation, row, now) ?? estimatedEta(departedAt, row.last_received, progress),
+    progress
   };
+}
+
+function scheduledEta(
+  serviceLocations: LocationResponse[],
+  originLocation: LocationReferenceResponse,
+  destinationLocation: LocationReferenceResponse,
+  row: VesselRow,
+  now: Date
+): string | undefined {
+  const origin = serviceLocations.find((location) => location.id === originLocation.id);
+  if (!origin?.scheduledDepartures) {
+    return undefined;
+  }
+
+  const departedAtMs = parseSqlTimestamp(row.origin_departed_at ?? row.last_received).getTime();
+  const lastReceivedMs = parseSqlTimestamp(row.last_received).getTime();
+  const maxDepartureMs = lastReceivedMs + (15 * 60 * 1000);
+  const minArrivalMs = now.getTime() - (10 * 60 * 1000);
+
+  const candidates = origin.scheduledDepartures
+    .filter((departure) => departure.destination.id === destinationLocation.id)
+    .map((departure) => ({
+      arrival: departure.arrival,
+      arrivalMs: new Date(departure.arrival).getTime(),
+      departureMs: new Date(departure.departure).getTime()
+    }))
+    .filter((departure) => (
+      departure.departureMs <= maxDepartureMs &&
+      departure.arrivalMs >= minArrivalMs
+    ))
+    .sort((left, right) => Math.abs(left.departureMs - departedAtMs) - Math.abs(right.departureMs - departedAtMs));
+
+  return candidates[0]?.arrival;
+}
+
+function estimatedEta(departedAt: string, lastReceived: string, progress: number | undefined): string | undefined {
+  if (progress === undefined || progress < 0.15 || progress > 0.9) {
+    return undefined;
+  }
+
+  const departedAtMs = new Date(departedAt).getTime();
+  const lastReceivedMs = parseSqlTimestamp(lastReceived).getTime();
+  const elapsedMs = lastReceivedMs - departedAtMs;
+  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) {
+    return undefined;
+  }
+
+  const totalMs = elapsedMs / progress;
+  const remainingMs = totalMs - elapsedMs;
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0 || remainingMs > 6 * 60 * 60 * 1000) {
+    return undefined;
+  }
+
+  return new Date(lastReceivedMs + remainingMs).toISOString();
+}
+
+function isCompletedVoyage(row: VesselRow, voyage: VesselVoyageResponse, now: Date): boolean {
+  const graceMs = 10 * 60 * 1000;
+  if (voyage.eta && now.getTime() - new Date(voyage.eta).getTime() > graceMs) {
+    return true;
+  }
+  return voyage.progress === 1 && now.getTime() - parseSqlTimestamp(row.last_received).getTime() > graceMs;
 }
 
 function computeProgress(
@@ -237,7 +311,13 @@ function computeProgress(
 
   const projected = (((vx - ox) * dx) + ((vy - oy) * dy)) / lengthSquared;
   const clamped = Math.max(0, Math.min(1, projected));
-  return Math.round(clamped * 1000) / 10;
+  if (clamped <= 0.02) {
+    return 0;
+  }
+  if (clamped >= 0.98) {
+    return 1;
+  }
+  return Math.round(clamped * 1000) / 1000;
 }
 
 function matchServiceLocation(
@@ -637,55 +717,6 @@ function createServiceOrganisationLookup(db: Database.Database, serviceId: numbe
   }]]);
 }
 
-function createServiceVesselLookup(db: Database.Database, now = new Date()): Map<number, VesselRow[]> {
-  const rows = db.prepare(`
-    WITH bounding_box AS (
-      SELECT
-        sl.service_id,
-        MIN(l.latitude) - 0.02 AS min_latitude,
-        MAX(l.latitude) + 0.02 AS max_latitude,
-        MIN(l.longitude) - 0.02 AS min_longitude,
-        MAX(l.longitude) + 0.02 AS max_longitude
-      FROM locations l
-      JOIN service_locations sl ON l.location_id = sl.location_id
-      GROUP BY sl.service_id
-    )
-    SELECT
-      s.service_id,
-      v.mmsi,
-      v.name,
-      v.speed,
-      v.course,
-      v.latitude,
-      v.longitude,
-      v.last_received,
-      v.destination_name,
-      v.eta,
-      v.origin_name,
-      v.origin_departed_at,
-      v.arrival_name,
-      v.arrival_at,
-      v.progress
-    FROM vessels v
-    JOIN bounding_box b
-    JOIN services s ON s.service_id = b.service_id
-    WHERE v.latitude BETWEEN b.min_latitude AND b.max_latitude
-      AND v.longitude BETWEEN b.min_longitude AND b.max_longitude
-      AND s.organisation_id = v.organisation_id
-  `).all() as VesselRow[];
-
-  const lookup = new Map<number, VesselRow[]>();
-  for (const row of rows) {
-    if (row.service_id === undefined || !isRecent(row.last_received, now)) {
-      continue;
-    }
-    const vessels = lookup.get(row.service_id) ?? [];
-    vessels.push(row);
-    lookup.set(row.service_id, vessels);
-  }
-  return lookup;
-}
-
 function createSingleServiceVesselLookup(db: Database.Database, serviceId: number, now = new Date()): Map<number, VesselRow[]> {
   const rows = db.prepare(`
     WITH bounding_box AS (
@@ -710,10 +741,7 @@ function createSingleServiceVesselLookup(db: Database.Database, serviceId: numbe
       v.destination_name,
       v.eta,
       v.origin_name,
-      v.origin_departed_at,
-      v.arrival_name,
-      v.arrival_at,
-      v.progress
+      v.origin_departed_at
     FROM vessels v
     JOIN services s ON s.service_id = ?
     JOIN bounding_box b
@@ -747,7 +775,10 @@ function serviceResponse(
     additionalInfo: value(row.additional_info),
     disruptionReason: value(row.disruption_reason),
     lastUpdatedDate: optionalTimestampResponse(row.last_updated_date),
-    vessels: (lookups.vessels.get(row.service_id) ?? []).map((vessel) => vesselResponse(vessel, locations)),
+    vessels: (lookups.vessels.get(row.service_id) ?? []).flatMap((vessel) => {
+      const response = serviceVesselResponse(vessel, locations, now);
+      return response ? [response] : [];
+    }),
     operator: lookups.organisations.get(row.service_id),
     scheduledDeparturesAvailable: lookups.scheduledServices.has(row.service_id),
     updated: timestampResponse(row.updated),
@@ -1405,7 +1436,7 @@ export function listServices(db: Database.Database): ServiceResponse[] {
     scheduledServices: listServicesWithScheduledDepartures(db),
     locations: createLocationLookup(db),
     organisations: createOrganisationLookup(db),
-    vessels: createServiceVesselLookup(db, now)
+    vessels: new Map<number, VesselRow[]>()
   };
 
   return rows.map((row) => serviceResponse(row, lookups, now));
@@ -1442,7 +1473,6 @@ export function getService(db: Database.Database, serviceId: number, departuresD
 }
 
 export function listInstallationServices(db: Database.Database, installationId: string): ServiceResponse[] {
-  const now = new Date();
   const rows = db.prepare(`
     SELECT s.service_id, s.area, s.route, s.status, s.additional_info, s.disruption_reason, s.organisation_id, s.last_updated_date, s.updated
     FROM services s
@@ -1455,10 +1485,10 @@ export function listInstallationServices(db: Database.Database, installationId: 
     scheduledServices: listServicesWithScheduledDepartures(db),
     locations: createLocationLookup(db),
     organisations: createOrganisationLookup(db),
-    vessels: createServiceVesselLookup(db, now)
+    vessels: new Map<number, VesselRow[]>()
   };
 
-  return rows.map((row) => serviceResponse(row, lookups, now));
+  return rows.map((row) => serviceResponse(row, lookups));
 }
 
 export function listTimetableDocuments(db: Database.Database, serviceId?: number): TimetableDocumentResponse[] {

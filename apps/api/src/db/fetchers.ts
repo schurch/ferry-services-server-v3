@@ -57,9 +57,6 @@ export function saveVessel(db: Database.Database, vessel: VesselPosition): void 
           eta = excluded.eta,
           origin_name = excluded.origin_name,
           origin_departed_at = excluded.origin_departed_at,
-          arrival_name = NULL,
-          arrival_at = NULL,
-          progress = NULL,
           updated = excluded.updated,
           organisation_id = excluded.organisation_id
   `).run(

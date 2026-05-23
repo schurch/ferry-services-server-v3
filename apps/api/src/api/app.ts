@@ -30,9 +30,12 @@ import {
   ErrorResponseSchema,
   LocationResponseSchema,
   LocationWeatherResponseSchema,
+  LocationSummaryResponseSchema,
+  OrganisationSummaryResponseSchema,
   OrganisationResponseSchema,
   PushStatusSchema,
   RailDepartureResponseSchema,
+  ServiceListResponseSchema,
   ServiceResponseSchema,
   ServiceStatusSchema,
   SnapshotBodySchema,
@@ -150,7 +153,9 @@ function addSchemas(app: FastifyInstance): void {
     CreateInstallationRequestSchema,
     AddServiceRequestSchema,
     OrganisationResponseSchema,
+    OrganisationSummaryResponseSchema,
     LocationWeatherResponseSchema,
+    LocationSummaryResponseSchema,
     RailDepartureResponseSchema,
     DepartureDestinationSchema,
     DepartureResponseSchema,
@@ -158,6 +163,7 @@ function addSchemas(app: FastifyInstance): void {
     VesselVoyageResponseSchema,
     VesselResponseSchema,
     TimetableDocumentResponseSchema,
+    ServiceListResponseSchema,
     ServiceResponseSchema,
     SnapshotBodySchema
   ]) {
@@ -193,7 +199,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }
 
   function savedServicesForInstallation(installationId: string): Record<string, unknown>[] {
-    return listInstallationServices(db, installationId).map(serviceToApi);
+    return listInstallationServices(db, installationId).map((service) => serviceToApi(service, {
+      includeAdditionalInfo: false,
+      includeLocationDetails: false,
+      includeOperatorDetails: false,
+      includeVessels: false
+    }));
   }
 
   addSchemas(app);
@@ -252,10 +263,15 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       description: "Returns all visible ferry services with current live status, operator, route and location metadata. Scheduled departures are not embedded in this list response.",
       tags: ["Ferry Services API"],
       response: {
-        200: Type.Array(Type.Ref(ServiceResponseSchema))
+        200: Type.Array(Type.Ref(ServiceListResponseSchema))
       }
     }
-  }, async () => listServices(db).map(serviceToApi));
+  }, async () => listServices(db).map((service) => serviceToApi(service, {
+    includeAdditionalInfo: false,
+    includeLocationDetails: false,
+    includeOperatorDetails: false,
+    includeVessels: false
+  })));
 
   app.get("/api/services/:serviceID", {
     preHandler: rateLimited(rateLimiter, {
@@ -325,7 +341,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       params: InstallationIDParams,
       body: Type.Ref(CreateInstallationRequestSchema),
       response: {
-        200: Type.Array(Type.Ref(ServiceResponseSchema)),
+        200: Type.Array(Type.Ref(ServiceListResponseSchema)),
         400: errorResponse("Invalid installationID or request body"),
         429: errorResponse("Too many installation registration requests")
       }
@@ -428,7 +444,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       tags: ["Ferry Services API"],
       params: InstallationIDParams,
       response: {
-        200: Type.Array(Type.Ref(ServiceResponseSchema)),
+        200: Type.Array(Type.Ref(ServiceListResponseSchema)),
         400: errorResponse("Invalid installationID"),
         429: errorResponse("Too many installation service list requests")
       }
@@ -460,7 +476,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       params: InstallationIDParams,
       body: Type.Ref(AddServiceRequestSchema),
       response: {
-        200: Type.Array(Type.Ref(ServiceResponseSchema)),
+        200: Type.Array(Type.Ref(ServiceListResponseSchema)),
         400: errorResponse("Invalid installationID or request body"),
         429: errorResponse("Too many installation service updates")
       }
@@ -493,7 +509,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       tags: ["Ferry Services API"],
       params: InstallationServiceParams,
       response: {
-        200: Type.Array(Type.Ref(ServiceResponseSchema)),
+        200: Type.Array(Type.Ref(ServiceListResponseSchema)),
         400: errorResponse("Invalid installationID or serviceID"),
         429: errorResponse("Too many installation service updates")
       }

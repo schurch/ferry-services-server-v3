@@ -47,6 +47,11 @@ export const OrganisationResponseSchema = Type.Object({
   facebook: Type.Optional(Type.String())
 }, { $id: "OrganisationResponse" });
 
+export const OrganisationSummaryResponseSchema = Type.Object({
+  id: Type.Integer(),
+  name: Type.String()
+}, { $id: "OrganisationSummaryResponse" });
+
 export const LocationWeatherResponseSchema = Type.Object({
   icon: Type.String(),
   description: Type.String(),
@@ -90,12 +95,19 @@ export const LocationResponseSchema = Type.Object({
   weather: Type.Optional(Type.Ref(LocationWeatherResponseSchema))
 }, { $id: "LocationResponse" });
 
+export const LocationSummaryResponseSchema = Type.Object({
+  id: Type.Integer(),
+  name: Type.String(),
+  latitude: Type.Number(),
+  longitude: Type.Number()
+}, { $id: "LocationSummaryResponse" });
+
 export const VesselVoyageResponseSchema = Type.Object({
   origin_location: Type.Ref(DepartureDestinationSchema),
   destination_location: Type.Ref(DepartureDestinationSchema),
   departed_at: Type.Ref(UTCTimeSchema),
-  eta: Type.Ref(UTCTimeSchema),
-  progress: Type.Optional(Type.Number())
+  eta: Type.Optional(Type.Ref(UTCTimeSchema)),
+  progress: Type.Optional(Type.Number({ minimum: 0, maximum: 1 }))
 }, { $id: "VesselVoyageResponse" });
 
 export const VesselResponseSchema = Type.Object({
@@ -132,11 +144,25 @@ export const ServiceResponseSchema = Type.Object({
   additional_info: Type.Optional(Type.String()),
   disruption_reason: Type.Optional(Type.String()),
   last_updated_date: Type.Optional(Type.Ref(UTCTimeSchema)),
-  vessels: Type.Array(Type.Ref(VesselResponseSchema)),
-  operator: Type.Optional(Type.Ref(OrganisationResponseSchema)),
+  vessels: Type.Optional(Type.Array(Type.Ref(VesselResponseSchema))),
+  operator: Type.Optional(Type.Ref(OrganisationSummaryResponseSchema)),
   scheduled_departures_available: Type.Boolean(),
   updated: Type.Ref(UTCTimeSchema),
   timetable_documents: Type.Optional(Type.Array(Type.Ref(TimetableDocumentResponseSchema)))
 }, { $id: "ServiceResponse" });
+
+export const ServiceListResponseSchema = Type.Object({
+  service_id: Type.Integer(),
+  area: Type.String(),
+  route: Type.String(),
+  status: Type.Ref(ServiceStatusSchema),
+  locations: Type.Array(Type.Ref(LocationSummaryResponseSchema)),
+  disruption_reason: Type.Optional(Type.String()),
+  last_updated_date: Type.Optional(Type.Ref(UTCTimeSchema)),
+  vessels: Type.Optional(Type.Array(Type.Ref(VesselResponseSchema))),
+  operator: Type.Optional(Type.Ref(OrganisationSummaryResponseSchema)),
+  scheduled_departures_available: Type.Boolean(),
+  updated: Type.Ref(UTCTimeSchema)
+}, { $id: "ServiceListResponse" });
 
 export const SnapshotBodySchema = Type.String({ format: "binary", $id: "SnapshotBody" });

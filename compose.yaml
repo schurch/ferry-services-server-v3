@@ -36,7 +36,7 @@ services:
 
   vessel-fetcher:
     <<: *app
-    command: ["sh", "-lc", "sleep 120; while true; do npm run fetch:vessels; sleep 300; done"]
+    command: ["sh", "-lc", "sleep 120; npm run fetch:vessels"]
 
   rail-fetcher:
     <<: *app

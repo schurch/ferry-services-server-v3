@@ -47,6 +47,76 @@ describe("Rail departure API formatting", () => {
     assertAllTimestampsMatch(listed as ServiceResponse);
     assertAllTimestampsMatch(detail as ServiceResponse);
   });
+
+  it("uses known vessel voyages to keep vessels on their matching service", () => {
+    freezeNow("2026-05-14T11:00:00.000Z");
+
+    currentDb = createTestDatabase();
+    const db = currentDb.db;
+    seedTimestampContractScenario(db);
+
+    db.prepare(`
+      INSERT INTO services (service_id, area, route, organisation_id, status, updated)
+      VALUES (?, ?, ?, 999, 0, ?)
+    `).run(9103, "PENTLAND FIRTH", "Nearby Test Route", "2026-05-14 10:50:00");
+    db.prepare(`
+      INSERT INTO locations (location_id, name, latitude, longitude)
+      VALUES (?, ?, ?, ?), (?, ?, ?, ?)
+    `).run(
+      9104, "Nearby North", 58.68, -3.03,
+      9105, "Nearby South", 58.73, -2.99
+    );
+    db.prepare("INSERT INTO service_locations (service_id, location_id) VALUES (?, ?), (?, ?)").run(9103, 9104, 9103, 9105);
+
+    db.prepare(`
+      UPDATE vessels
+      SET destination_name = ?,
+          eta = ?,
+          origin_name = ?,
+          origin_departed_at = ?
+      WHERE mmsi = ?
+    `).run("St Margaret's Hope", "2026-05-14 11:20:00", "Gills Bay", "2026-05-14 10:40:00", 123456789);
+
+    assert.equal(requireService(db, 9100).vessels.length, 1);
+    assert.equal(requireService(db, 9103).vessels.length, 0);
+    assert.equal(requireService(db, 9100).vessels[0]?.voyage?.eta, "2026-05-14T11:20:00.000Z");
+
+    db.prepare("UPDATE vessels SET eta = NULL WHERE mmsi = ?").run(123456789);
+
+    const estimatedEta = requireService(db, 9100).vessels[0]?.voyage?.eta;
+    assert.notEqual(estimatedEta, undefined);
+    assert.ok(new Date(estimatedEta as string) > new Date("2026-05-14T10:55:00.000Z"));
+  });
+
+  it("uses scheduled arrival as vessel ETA when the voyage matches a departure", () => {
+    freezeNow("2026-03-16T09:45:00.000Z");
+
+    currentDb = createTestDatabase();
+    const db = currentDb.db;
+    seedTimestampContractScenario(db);
+
+    db.prepare(`
+      UPDATE vessels
+      SET latitude = ?,
+          longitude = ?,
+          last_received = ?,
+          destination_name = ?,
+          eta = NULL,
+          origin_name = ?,
+          origin_departed_at = ?
+      WHERE mmsi = ?
+    `).run(
+      58.7,
+      -3.0,
+      "2026-03-16 09:45:00",
+      "St Margaret's Hope",
+      "Gills Bay",
+      "2026-03-16 09:31:00",
+      123456789
+    );
+
+    assert.equal(getService(db, 9100, "2026-03-16")?.vessels[0]?.voyage?.eta, "2026-03-16T10:40:00.000Z");
+  });
 });
 
 function freezeNow(isoTimestamp: string): void {
@@ -204,7 +274,7 @@ function assertAllTimestampsMatch(value: unknown): void {
 }
 
 function isTimestampKey(key: string): boolean {
-  return ["departure", "arrival", "lastReceived", "lastSeenAt", "updated", "lastUpdatedDate"].includes(key);
+  return ["departure", "arrival", "departedAt", "eta", "lastReceived", "lastSeenAt", "updated", "lastUpdatedDate"].includes(key);
 }
 
 function requireService(db: Database.Database, serviceId: number): ServiceResponse {

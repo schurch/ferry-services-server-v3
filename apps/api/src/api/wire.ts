@@ -17,16 +17,16 @@ function withoutUndefined<T extends Record<string, unknown>>(value: T): T {
   return value;
 }
 
-function organisationToApi(organisation: OrganisationResponse): Record<string, unknown> {
+function organisationToApi(organisation: OrganisationResponse, options: { includeDetails?: boolean } = {}): Record<string, unknown> {
   return withoutUndefined({
     id: organisation.id,
     name: organisation.name,
-    website: organisation.website,
-    local_number: organisation.localNumber,
-    international_number: organisation.internationalNumber,
-    email: organisation.email,
-    x: organisation.x,
-    facebook: organisation.facebook
+    website: options.includeDetails === false ? undefined : organisation.website,
+    local_number: options.includeDetails === false ? undefined : organisation.localNumber,
+    international_number: options.includeDetails === false ? undefined : organisation.internationalNumber,
+    email: options.includeDetails === false ? undefined : organisation.email,
+    x: options.includeDetails === false ? undefined : organisation.x,
+    facebook: options.includeDetails === false ? undefined : organisation.facebook
   });
 }
 
@@ -52,16 +52,16 @@ function railDepartureToApi(departure: RailDepartureResponse): Record<string, un
   });
 }
 
-function locationToApi(location: LocationResponse): Record<string, unknown> {
+function locationToApi(location: LocationResponse, options: { includeDetails?: boolean } = {}): Record<string, unknown> {
   return withoutUndefined({
     id: location.id,
     name: location.name,
     latitude: location.latitude,
     longitude: location.longitude,
-    scheduled_departures: location.scheduledDepartures?.map(departureToApi),
-    next_departure: location.nextDeparture ? departureToApi(location.nextDeparture) : undefined,
-    next_rail_departure: location.nextRailDeparture ? railDepartureToApi(location.nextRailDeparture) : undefined,
-    weather: location.weather ? weatherToApi(location.weather) : undefined
+    scheduled_departures: options.includeDetails === false ? undefined : location.scheduledDepartures?.map(departureToApi),
+    next_departure: options.includeDetails === false || !location.nextDeparture ? undefined : departureToApi(location.nextDeparture),
+    next_rail_departure: options.includeDetails === false || !location.nextRailDeparture ? undefined : railDepartureToApi(location.nextRailDeparture),
+    weather: options.includeDetails === false || !location.weather ? undefined : weatherToApi(location.weather)
   });
 }
 
@@ -120,18 +120,21 @@ export function timetableDocumentToApi(document: TimetableDocumentResponse): Rec
   });
 }
 
-export function serviceToApi(service: ServiceResponse): Record<string, unknown> {
+export function serviceToApi(
+  service: ServiceResponse,
+  options: { includeAdditionalInfo?: boolean; includeLocationDetails?: boolean; includeOperatorDetails?: boolean; includeVessels?: boolean } = {}
+): Record<string, unknown> {
   return withoutUndefined({
     service_id: service.serviceId,
     area: service.area,
     route: service.route,
     status: service.status,
-    locations: service.locations.map(locationToApi),
-    additional_info: service.additionalInfo,
+    locations: service.locations.map((location) => locationToApi(location, { includeDetails: options.includeLocationDetails })),
+    additional_info: options.includeAdditionalInfo === false ? undefined : service.additionalInfo,
     disruption_reason: service.disruptionReason,
     last_updated_date: service.lastUpdatedDate,
-    vessels: service.vessels.map(vesselToApi),
-    operator: service.operator ? organisationToApi(service.operator) : undefined,
+    vessels: options.includeVessels === false ? [] : service.vessels.map(vesselToApi),
+    operator: service.operator ? organisationToApi(service.operator, { includeDetails: options.includeOperatorDetails }) : undefined,
     scheduled_departures_available: service.scheduledDeparturesAvailable,
     updated: service.updated,
     timetable_documents: service.timetableDocuments?.map(timetableDocumentToApi)

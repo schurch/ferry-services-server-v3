@@ -1,7 +1,7 @@
 import "dotenv/config";
+import type Database from "better-sqlite3";
 import { setTimeout as delay } from "node:timers/promises";
-import * as cycleTLS from "cycletls";
-import type { CycleTLSClient } from "cycletls";
+import { config } from "../config.js";
 import { openDatabase } from "../db/database.js";
 import { saveVessel } from "../db/fetchers.js";
 import { logger } from "../logger.js";
@@ -10,38 +10,49 @@ import type { VesselPosition } from "../types/fetchers.js";
 type OrganisationId = number;
 type Mmsi = number;
 
-type MarineTrafficVessel = {
-  SHIP_ID?: unknown;
-  MMSI?: unknown;
-  SHIPNAME?: unknown;
-  LAT?: unknown;
-  LON?: unknown;
-  SPEED?: unknown;
-  COURSE?: unknown;
-  TIMESTAMP?: unknown;
-};
-
-type MarineTrafficVoyage = {
-  reportedDestination?: unknown;
-  eta?: unknown;
-  etaCalc?: unknown;
-  departurePortId?: unknown;
-  departureTimestamp?: unknown;
-};
-
-type MarineTrafficPort = {
-  name?: unknown;
-};
-
-type VesselFetchResult = VesselPosition | "blocked" | null;
-
 type OrganisationVessels = {
   organisationId: OrganisationId;
   organisationName: string;
   mmsis: Mmsi[];
 };
 
-const initCycleTLS = cycleTLS.default as unknown as () => Promise<CycleTLSClient>;
+type AisStreamMessage = {
+  MessageType?: unknown;
+  Metadata?: Record<string, unknown>;
+  Message?: Record<string, unknown>;
+};
+
+type PositionUpdate = {
+  mmsi: number;
+  latitude: number;
+  longitude: number;
+  speed?: number;
+  course?: number;
+  destinationName?: string;
+  eta?: string;
+  receivedAt: string;
+};
+
+type TerminalReference = {
+  organisationId: number;
+  serviceId: number;
+  name: string;
+  latitude: number;
+  longitude: number;
+};
+
+type PreviousVesselPosition = {
+  name: string;
+  latitude: number;
+  longitude: number;
+  destinationName?: string;
+  eta?: string;
+  originName?: string;
+  originDepartedAt?: string;
+};
+
+const aisStreamUrl = "wss://stream.aisstream.io/v0/stream";
+const terminalDepartureRadiusKm = 0.75;
 
 const trackedVessels: OrganisationVessels[] = [
   {
@@ -126,8 +137,7 @@ const trackedVessels: OrganisationVessels[] = [
       235019173,
       235019174,
       235018919,
-      232029607,
-      235021681
+      232029607
     ]
   },
   {
@@ -164,13 +174,8 @@ function parseText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
 }
 
-function unixTimestampToSql(value: unknown): string | undefined {
-  const seconds = parseInteger(value);
-  if (seconds === undefined) {
-    return undefined;
-  }
-
-  return new Date(seconds * 1000).toISOString().replace("T", " ").slice(0, 19);
+function sqlTimestamp(date = new Date()): string {
+  return date.toISOString().replace("T", " ").slice(0, 19);
 }
 
 function capitaliseWords(value: string): string {
@@ -183,190 +188,403 @@ function capitaliseWords(value: string): string {
   }).join(" ");
 }
 
-function vesselPosition(organisationId: number, value: MarineTrafficVessel): VesselPosition | null {
-  if (
-    typeof value.MMSI !== "string" ||
-    typeof value.SHIPNAME !== "string" ||
-    typeof value.LAT !== "string" ||
-    typeof value.LON !== "string" ||
-    typeof value.TIMESTAMP !== "string"
-  ) {
-    return null;
+function cleanAisText(value: string): string | undefined {
+  const cleaned = value.replace(/@/g, " ").trim().replace(/\s+/g, " ");
+  return cleaned === "" ? undefined : cleaned;
+}
+
+function parseAisEta(value: unknown, now = new Date()): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
   }
 
-  const mmsi = Number.parseInt(value.MMSI, 10);
-  const latitude = Number.parseFloat(value.LAT);
-  const longitude = Number.parseFloat(value.LON);
-  if (!Number.isFinite(mmsi) || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+  const eta = value as Record<string, unknown>;
+  const month = parseInteger(eta.Month);
+  const day = parseInteger(eta.Day);
+  const hour = parseInteger(eta.Hour);
+  const minute = parseInteger(eta.Minute);
+  if (
+    month === undefined ||
+    day === undefined ||
+    hour === undefined ||
+    minute === undefined ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hour > 23 ||
+    minute > 59
+  ) {
+    return undefined;
+  }
+
+  const currentYear = now.getUTCFullYear();
+  const candidates = [currentYear - 1, currentYear, currentYear + 1]
+    .map((year) => new Date(Date.UTC(year, month - 1, day, hour, minute)));
+  const best = candidates.reduce((nearest, candidate) => (
+    Math.abs(candidate.getTime() - now.getTime()) < Math.abs(nearest.getTime() - now.getTime()) ? candidate : nearest
+  ));
+  return sqlTimestamp(best);
+}
+
+function trackedVesselMap(): Map<number, OrganisationId> {
+  const map = new Map<number, OrganisationId>();
+  for (const { organisationId, organisationName, mmsis } of trackedVessels) {
+    for (const mmsi of mmsis) {
+      if (map.has(mmsi)) {
+        logger.warn({ mmsi, organisationName }, "Ignoring duplicate tracked vessel MMSI");
+        continue;
+      }
+      map.set(mmsi, organisationId);
+    }
+  }
+  return map;
+}
+
+function allTrackedMmsis(vesselOrganisations: Map<number, OrganisationId>): string[] {
+  return [...vesselOrganisations.keys()].map(String);
+}
+
+function aisMessageBody(message: AisStreamMessage): Record<string, unknown> {
+  const messageType = parseText(message.MessageType);
+  const value = messageType ? message.Message?.[messageType] : undefined;
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function parsePositionUpdate(message: AisStreamMessage): PositionUpdate | null {
+  const body = aisMessageBody(message);
+  const metadata = message.Metadata ?? {};
+  const mmsi = parseInteger(body.UserID ?? body.MMSI ?? body.Mmsi ?? metadata.MMSI ?? metadata.ShipMMSI);
+  const latitude = parseNumber(body.Latitude ?? metadata.Latitude ?? metadata.latitude);
+  const longitude = parseNumber(body.Longitude ?? metadata.Longitude ?? metadata.longitude);
+  if (mmsi === undefined || latitude === undefined || longitude === undefined) {
     return null;
   }
 
   return {
     mmsi,
-    name: capitaliseWords(value.SHIPNAME),
-    speed: parseNumber(value.SPEED),
-    course: parseNumber(value.COURSE),
     latitude,
     longitude,
-    lastReceived: value.TIMESTAMP,
-    organisationId
+    speed: parseNumber(body.Sog ?? body.SOG ?? metadata.Sog ?? metadata.SOG),
+    course: parseNumber(body.Cog ?? body.COG ?? metadata.Cog ?? metadata.COG),
+    destinationName: parseText(body.Destination) ? cleanAisText(String(body.Destination)) : undefined,
+    eta: parseAisEta(body.Eta),
+    receivedAt: sqlTimestamp()
   };
 }
 
-function isCloudflareChallenge(status: number, contentType: string | null, body: string): boolean {
-  return status === 403 && contentType?.includes("text/html") === true && body.includes("Attention Required! | Cloudflare");
-}
-
-async function fetchVessel(client: CycleTLSClient, organisationId: OrganisationId, mmsi: Mmsi): Promise<VesselFetchResult> {
-  const headers = {
-    Accept: "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.5",
-    "X-NewRelic-ID": "undefined",
-    "Vessel-Image": "0054729193319b27a6d45397a3b5a4d83e17",
-    "X-Requested-With": "XMLHttpRequest",
-    "Alt-Used": "www.marinetraffic.com",
-    Connection: "keep-alive",
-    Referer: "https://www.marinetraffic.com/en/ais/home/centerx:-5.5/centery:56.4/zoom:8",
-    "Sec-Fetch-Dest": "empty",
-    "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Site": "same-origin"
-  };
-
-  try {
-    const response = await client.get(`https://www.marinetraffic.com/map/getvesseljson/mmsi:${mmsi}`, {
-      body: "",
-      headers,
-      timeout: 20,
-      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15"
-    });
-    const body = await response.text();
-
-    if (response.status < 200 || response.status >= 300) {
-      const contentType = Array.isArray(response.headers["Content-Type"])
-        ? String(response.headers["Content-Type"][0])
-        : null;
-      if (isCloudflareChallenge(response.status, contentType, body)) {
-        logger.error({ mmsi }, "MarineTraffic blocked vessel fetching with a Cloudflare challenge");
-        return "blocked";
-      }
-      logger.warn({ mmsi, statusCode: response.status, responseBody: body.slice(0, 500) }, "Skipping vessel because MarineTraffic returned an error");
-      return null;
-    }
-
-    const value = JSON.parse(body) as MarineTrafficVessel;
-    const vessel = vesselPosition(organisationId, value);
-    if (!vessel) {
-      logger.warn({ mmsi }, "Skipping vessel because MarineTraffic response could not be parsed");
-      return null;
-    }
-
-    const shipId = parseInteger(value.SHIP_ID);
-    if (shipId !== undefined) {
-      Object.assign(vessel, await fetchVoyageData(client, headers, shipId));
-    }
-
-    logger.info({ mmsi: vessel.mmsi, vesselName: vessel.name }, "Fetched vessel");
-    return vessel;
-  } catch (error) {
-    logger.warn({ err: error, mmsi }, "Skipping vessel because fetch failed");
+function parseShipName(message: AisStreamMessage): { mmsi: number; name: string } | null {
+  const body = aisMessageBody(message);
+  const metadata = message.Metadata ?? {};
+  const mmsi = parseInteger(body.UserID ?? body.MMSI ?? body.Mmsi ?? metadata.MMSI ?? metadata.ShipMMSI);
+  const rawName = parseText(body.Name ?? body.ShipName ?? body.NameExtension ?? metadata.ShipName);
+  if (mmsi === undefined || rawName === undefined) {
     return null;
   }
+  return { mmsi, name: capitaliseWords(rawName) };
 }
 
-async function fetchVoyageData(
-  client: CycleTLSClient,
-  headers: Record<string, string>,
-  shipId: number
-): Promise<Partial<VesselPosition>> {
-  try {
-    const response = await client.get(`https://www.marinetraffic.com/en/vessels/${shipId}/voyage`, {
-      body: "",
-      headers,
-      timeout: 20,
-      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15"
-    });
-    const body = await response.text();
-    if (response.status < 200 || response.status >= 300) {
-      logger.warn({ shipId, statusCode: response.status }, "Skipping voyage enrichment because MarineTraffic returned an error");
-      return {};
+async function eventDataText(data: unknown): Promise<string> {
+  if (typeof data === "string") {
+    return data;
+  }
+  if (data instanceof ArrayBuffer) {
+    return new TextDecoder().decode(data);
+  }
+  if (data instanceof Blob) {
+    return data.text();
+  }
+  return String(data);
+}
+
+function loadTerminals(db: Database.Database): TerminalReference[] {
+  return db.prepare(`
+    SELECT DISTINCT
+      s.organisation_id AS organisationId,
+      sl.service_id AS serviceId,
+      l.name,
+      l.latitude,
+      l.longitude
+    FROM service_locations sl
+    JOIN services s ON s.service_id = sl.service_id
+    JOIN locations l ON l.location_id = sl.location_id
+  `).all() as TerminalReference[];
+}
+
+function loadVesselNames(db: Database.Database): Map<number, string> {
+  const rows = db.prepare(`
+    SELECT mmsi, name
+    FROM vessels
+  `).all() as Array<{ mmsi: number; name: string }>;
+
+  return new Map(rows.map((row) => [row.mmsi, row.name]));
+}
+
+function previousVesselPosition(db: Database.Database, mmsi: number): PreviousVesselPosition | undefined {
+  const row = db.prepare(`
+    SELECT name, latitude, longitude, destination_name, eta, origin_name, origin_departed_at
+    FROM vessels
+    WHERE mmsi = ?
+  `).get(mmsi) as {
+    name: string;
+    latitude: number;
+    longitude: number;
+    destination_name: string | null;
+    eta: string | null;
+    origin_name: string | null;
+    origin_departed_at: string | null;
+  } | undefined;
+
+  return row
+    ? {
+        name: row.name,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        destinationName: row.destination_name ?? undefined,
+        eta: row.eta ?? undefined,
+        originName: row.origin_name ?? undefined,
+        originDepartedAt: row.origin_departed_at ?? undefined
+      }
+    : undefined;
+}
+
+function distanceKm(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }): number {
+  const earthRadiusKm = 6371;
+  const lat1 = a.latitude * Math.PI / 180;
+  const lat2 = b.latitude * Math.PI / 180;
+  const deltaLatitude = (b.latitude - a.latitude) * Math.PI / 180;
+  const deltaLongitude = (b.longitude - a.longitude) * Math.PI / 180;
+  const haversine = Math.sin(deltaLatitude / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLongitude / 2) ** 2;
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+function nearestTerminal(
+  terminals: TerminalReference[],
+  organisationId: number,
+  position: { latitude: number; longitude: number }
+): TerminalReference | undefined {
+  let nearest: { terminal: TerminalReference; distance: number } | undefined;
+  for (const terminal of terminals) {
+    if (terminal.organisationId !== organisationId) {
+      continue;
     }
 
-    const voyage = JSON.parse(body) as MarineTrafficVoyage;
-    const originName = await resolvePortName(client, headers, voyage.departurePortId);
+    const distance = distanceKm(position, terminal);
+    if (distance <= terminalDepartureRadiusKm && (nearest === undefined || distance < nearest.distance)) {
+      nearest = { terminal, distance };
+    }
+  }
+  return nearest?.terminal;
+}
 
+function serviceTerminals(terminals: TerminalReference[], serviceId: number): TerminalReference[] {
+  return terminals.filter((terminal) => terminal.serviceId === serviceId);
+}
+
+function withinServiceBox(
+  terminals: TerminalReference[],
+  position: { latitude: number; longitude: number }
+): boolean {
+  const padding = 0.02;
+  const latitudes = terminals.map((terminal) => terminal.latitude);
+  const longitudes = terminals.map((terminal) => terminal.longitude);
+  return position.latitude >= Math.min(...latitudes) - padding
+    && position.latitude <= Math.max(...latitudes) + padding
+    && position.longitude >= Math.min(...longitudes) - padding
+    && position.longitude <= Math.max(...longitudes) + padding;
+}
+
+function destinationFromOrigin(
+  terminals: TerminalReference[],
+  origin: TerminalReference,
+  position: PositionUpdate
+): string | undefined {
+  const candidates = terminals.filter((terminal) => terminal.name === origin.name && terminal.organisationId === origin.organisationId);
+  for (const candidate of candidates) {
+    const routeTerminals = serviceTerminals(terminals, candidate.serviceId);
+    if (routeTerminals.length !== 2 || !withinServiceBox(routeTerminals, position)) {
+      continue;
+    }
+
+    const destination = routeTerminals.find((terminal) => terminal.name !== candidate.name);
+    if (destination) {
+      return destination.name;
+    }
+  }
+  return undefined;
+}
+
+function enrichVoyage(
+  db: Database.Database,
+  terminals: TerminalReference[],
+  organisationId: number,
+  position: PositionUpdate
+): Pick<VesselPosition, "originName" | "originDepartedAt" | "destinationName" | "eta"> {
+  const previous = previousVesselPosition(db, position.mmsi);
+  const previousTerminal = previous ? nearestTerminal(terminals, organisationId, previous) : undefined;
+  const currentTerminal = nearestTerminal(terminals, organisationId, position);
+
+  if (currentTerminal) {
     return {
-      destinationName: parseText(voyage.reportedDestination),
-      eta: unixTimestampToSql(voyage.eta ?? voyage.etaCalc),
-      originName,
-      originDepartedAt: unixTimestampToSql(voyage.departureTimestamp)
+      destinationName: position.destinationName ?? previous?.destinationName,
+      eta: position.eta ?? previous?.eta,
+      originName: currentTerminal.name
     };
-  } catch (error) {
-    logger.warn({ err: error, shipId }, "Skipping voyage enrichment because fetch failed");
-    return {};
   }
+
+  if (previousTerminal) {
+    return {
+      destinationName: position.destinationName ?? destinationFromOrigin(terminals, previousTerminal, position),
+      eta: position.eta ?? previous?.eta,
+      originName: previousTerminal.name,
+      originDepartedAt: position.receivedAt
+    };
+  }
+
+  if (previous?.originName && previous.originDepartedAt) {
+    return {
+      destinationName: position.destinationName ?? previous.destinationName,
+      eta: position.eta ?? previous.eta,
+      originName: previous.originName,
+      originDepartedAt: previous.originDepartedAt
+    };
+  }
+
+  return {};
 }
 
-const portNameCache = new Map<number, string>();
-
-async function resolvePortName(
-  client: CycleTLSClient,
-  headers: Record<string, string>,
-  portId: unknown
-): Promise<string | undefined> {
-  const parsedPortId = parseInteger(portId);
-  if (parsedPortId === undefined) {
-    return undefined;
+function vesselPosition(
+  db: Database.Database,
+  terminals: TerminalReference[],
+  vesselOrganisations: Map<number, OrganisationId>,
+  vesselNames: Map<number, string>,
+  position: PositionUpdate
+): VesselPosition | null {
+  const organisationId = vesselOrganisations.get(position.mmsi);
+  if (organisationId === undefined) {
+    return null;
   }
 
-  const cached = portNameCache.get(parsedPortId);
-  if (cached !== undefined) {
-    return cached;
-  }
+  const previous = previousVesselPosition(db, position.mmsi);
+  const name = vesselNames.get(position.mmsi) ?? previous?.name ?? `MMSI ${position.mmsi}`;
+  return {
+    mmsi: position.mmsi,
+    name,
+    speed: position.speed,
+    course: position.course,
+    latitude: position.latitude,
+    longitude: position.longitude,
+    lastReceived: position.receivedAt,
+    organisationId,
+    ...enrichVoyage(db, terminals, organisationId, position)
+  };
+}
 
-  try {
-    const response = await client.get(`https://www.marinetraffic.com/en/ports/${parsedPortId}`, {
-      body: "",
-      headers,
-      timeout: 20,
-      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Safari/605.1.15"
+function connectToAisStream(
+  apiKey: string,
+  db: Database.Database,
+  terminals: TerminalReference[],
+  vesselOrganisations: Map<number, OrganisationId>,
+  vesselNames: Map<number, string>
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(aisStreamUrl);
+    let settled = false;
+
+    const settle = (error?: Error): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
+
+    socket.addEventListener("open", () => {
+      const mmsis = allTrackedMmsis(vesselOrganisations);
+      socket.send(JSON.stringify({
+        APIKey: apiKey,
+        BoundingBoxes: [[[-90, -180], [90, 180]]],
+        FiltersShipMMSI: mmsis,
+        FilterMessageTypes: [
+          "PositionReport",
+          "ShipStaticData",
+          "StaticDataReport",
+          "StandardClassBPositionReport",
+          "ExtendedClassBPositionReport"
+        ]
+      }));
+      logger.info({ vesselCount: mmsis.length }, "Subscribed to AISStream vessel updates");
     });
-    const body = await response.text();
-    if (response.status < 200 || response.status >= 300) {
-      logger.warn({ portId: parsedPortId, statusCode: response.status }, "Skipping port name enrichment because MarineTraffic returned an error");
-      return undefined;
-    }
 
-    const port = JSON.parse(body) as MarineTrafficPort;
-    const name = parseText(port.name);
-    if (name !== undefined) {
-      portNameCache.set(parsedPortId, name);
-    }
-    return name;
-  } catch (error) {
-    logger.warn({ err: error, portId: parsedPortId }, "Skipping port name enrichment because fetch failed");
-    return undefined;
-  }
+    socket.addEventListener("message", (event) => {
+      void (async () => {
+        const text = await eventDataText(event.data);
+        const message = JSON.parse(text) as AisStreamMessage;
+        const shipName = parseShipName(message);
+        if (shipName && vesselOrganisations.has(shipName.mmsi)) {
+          vesselNames.set(shipName.mmsi, shipName.name);
+        }
+
+        const position = parsePositionUpdate(message);
+        if (!position) {
+          return;
+        }
+
+        const vessel = vesselPosition(db, terminals, vesselOrganisations, vesselNames, position);
+        if (!vessel) {
+          return;
+        }
+
+        saveVessel(db, vessel);
+        logger.info({ mmsi: vessel.mmsi, vesselName: vessel.name }, "Saved AISStream vessel update");
+      })().catch((error: unknown) => {
+        logger.warn({ err: error }, "Skipping AISStream message because it could not be processed");
+      });
+    });
+
+    socket.addEventListener("error", () => {
+      socket.close();
+      settle(new Error("AISStream websocket error"));
+    });
+
+    socket.addEventListener("close", (event) => {
+      const reason = event.reason || undefined;
+      logger.warn({ code: event.code, reason }, "AISStream websocket closed");
+      settle();
+    });
+  });
 }
 
 async function main(): Promise<void> {
+  if (!config.aisStreamApiKey) {
+    logger.warn("AIS_STREAM_API_KEY is not set; skipping vessel fetch");
+    return;
+  }
+
   const db = openDatabase();
-  const client = await initCycleTLS();
+  const terminals = loadTerminals(db);
+  const vesselNames = loadVesselNames(db);
+  const vesselOrganisations = trackedVesselMap();
+  let reconnectDelayMs = 5_000;
+
   try {
-    for (const { organisationId, mmsis } of trackedVessels) {
-      for (const mmsi of mmsis) {
-        const vessel = await fetchVessel(client, organisationId, mmsi);
-        if (vessel === "blocked") {
-          process.exitCode = 1;
-          return;
-        }
-        if (vessel) {
-          saveVessel(db, vessel);
-        }
-        await delay(4_000);
+    while (true) {
+      try {
+        await connectToAisStream(config.aisStreamApiKey, db, terminals, vesselOrganisations, vesselNames);
+        reconnectDelayMs = 5_000;
+      } catch (error) {
+        logger.warn({ err: error }, "AISStream vessel fetcher disconnected with an error");
       }
+
+      await delay(reconnectDelayMs);
+      reconnectDelayMs = Math.min(reconnectDelayMs * 2, 60_000);
     }
   } finally {
-    await client.exit();
     db.close();
   }
 }

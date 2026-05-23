@@ -73,7 +73,7 @@ export type VesselVoyageResponse = {
   originLocation: LocationReferenceResponse;
   destinationLocation: LocationReferenceResponse;
   departedAt: string;
-  eta: string;
+  eta?: string;
   progress?: number;
 };
 
