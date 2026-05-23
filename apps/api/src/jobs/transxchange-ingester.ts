@@ -529,12 +529,18 @@ async function extractZip(zipFilePath: string, outputDirectory: string): Promise
   try {
     await new Promise<void>((resolve, reject) => {
       let settled = false;
+      let processedEntries = 0;
       const finish = (error?: Error): void => {
         if (settled) return;
         settled = true;
         if (error) reject(error);
         else resolve();
       };
+
+      if (zipfile.entryCount === 0) {
+        finish();
+        return;
+      }
 
       zipfile.on("entry", (entry) => {
         void (async () => {
@@ -552,12 +558,16 @@ async function extractZip(zipFilePath: string, outputDirectory: string): Promise
             await pipeline(await openZipEntryStream(zipfile, entry), fs.createWriteStream(destination));
           }
 
-          if (!settled) zipfile.readEntry();
+          processedEntries += 1;
+          if (processedEntries >= zipfile.entryCount) {
+            finish();
+          } else if (!settled) {
+            zipfile.readEntry();
+          }
         })().catch((error: unknown) => {
           finish(error instanceof Error ? error : new Error(String(error)));
         });
       });
-      zipfile.once("end", () => finish());
       zipfile.once("error", (error) => finish(error));
       zipfile.readEntry();
     });
@@ -638,8 +648,10 @@ async function main(): Promise<void> {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  void main().catch((error: unknown) => {
+  try {
+    await main();
+  } catch (error: unknown) {
     logger.error({ error }, "TransXChange ingest failed");
     process.exitCode = 1;
-  });
+  }
 }
