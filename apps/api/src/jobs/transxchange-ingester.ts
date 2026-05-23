@@ -647,11 +647,18 @@ async function main(): Promise<void> {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+async function runCli(): Promise<void> {
+  const keepAlive = setInterval(() => undefined, 1000);
   try {
     await main();
   } catch (error: unknown) {
     logger.error({ error }, "TransXChange ingest failed");
     process.exitCode = 1;
+  } finally {
+    clearInterval(keepAlive);
   }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  void runCli();
 }
