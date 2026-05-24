@@ -2,6 +2,7 @@ import "dotenv/config";
 import type Database from "better-sqlite3";
 import * as cycleTLS from "cycletls";
 import type { CycleTLSClient } from "cycletls";
+import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { config } from "../config.js";
 import { openDatabase } from "../db/database.js";
@@ -457,7 +458,7 @@ function destinationFromOrigin(
   return undefined;
 }
 
-function enrichVoyage(
+export function enrichVoyage(
   db: Database.Database,
   terminals: TerminalReference[],
   organisationId: number,
@@ -476,11 +477,12 @@ function enrichVoyage(
   }
 
   if (previousTerminal) {
+    const originDepartedAt = position.receivedAt;
     return {
       destinationName: position.destinationName ?? destinationFromOrigin(terminals, previousTerminal, position),
-      eta: position.eta ?? previous?.eta,
+      eta: etaForNewDeparture(position.eta, previous?.eta, originDepartedAt),
       originName: previousTerminal.name,
-      originDepartedAt: position.receivedAt
+      originDepartedAt
     };
   }
 
@@ -494,6 +496,11 @@ function enrichVoyage(
   }
 
   return {};
+}
+
+function etaForNewDeparture(positionEta: string | undefined, previousEta: string | undefined, originDepartedAt: string): string | undefined {
+  const eta = positionEta ?? previousEta;
+  return eta && new Date(eta).getTime() >= new Date(originDepartedAt).getTime() ? eta : undefined;
 }
 
 function vesselPosition(
@@ -839,4 +846,6 @@ async function main(): Promise<void> {
   }
 }
 
-await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}
