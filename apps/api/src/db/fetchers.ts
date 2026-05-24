@@ -59,6 +59,7 @@ export function saveVessel(db: Database.Database, vessel: VesselPosition): void 
           origin_departed_at = excluded.origin_departed_at,
           updated = excluded.updated,
           organisation_id = excluded.organisation_id
+      WHERE excluded.last_received > vessels.last_received
   `).run(
     vessel.mmsi,
     vessel.name,
