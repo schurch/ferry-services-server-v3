@@ -83,9 +83,7 @@ describe("Rail departure API formatting", () => {
 
     db.prepare("UPDATE vessels SET eta = NULL WHERE mmsi = ?").run(123456789);
 
-    const estimatedEta = requireService(db, 9100).vessels[0]?.voyage?.eta;
-    assert.notEqual(estimatedEta, undefined);
-    assert.ok(new Date(estimatedEta as string) > new Date("2026-05-14T10:55:00.000Z"));
+    assert.equal(requireService(db, 9100).vessels[0]?.voyage?.eta, undefined);
   });
 
   it("shows recent vessels when voyage data is incomplete", () => {

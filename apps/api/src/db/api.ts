@@ -229,7 +229,7 @@ function vesselVoyageResponse(row: VesselRow, serviceLocations: LocationResponse
     originLocation,
     destinationLocation,
     departedAt,
-    eta: reportedEta ?? scheduledEta(serviceLocations, originLocation, destinationLocation, row, now) ?? estimatedEta(departedAt, row.last_received, progress),
+    eta: reportedEta ?? scheduledEta(serviceLocations, originLocation, destinationLocation, row, now),
     progress
   };
 }
@@ -265,27 +265,6 @@ function scheduledEta(
     .sort((left, right) => Math.abs(left.departureMs - departedAtMs) - Math.abs(right.departureMs - departedAtMs));
 
   return candidates[0]?.arrival;
-}
-
-function estimatedEta(departedAt: string, lastReceived: string, progress: number | undefined): string | undefined {
-  if (progress === undefined || progress < 0.15 || progress > 0.9) {
-    return undefined;
-  }
-
-  const departedAtMs = new Date(departedAt).getTime();
-  const lastReceivedMs = parseSqlTimestamp(lastReceived).getTime();
-  const elapsedMs = lastReceivedMs - departedAtMs;
-  if (!Number.isFinite(elapsedMs) || elapsedMs <= 0) {
-    return undefined;
-  }
-
-  const totalMs = elapsedMs / progress;
-  const remainingMs = totalMs - elapsedMs;
-  if (!Number.isFinite(remainingMs) || remainingMs <= 0 || remainingMs > 6 * 60 * 60 * 1000) {
-    return undefined;
-  }
-
-  return new Date(lastReceivedMs + remainingMs).toISOString();
 }
 
 function isCompletedVoyage(row: VesselRow, voyage: VesselVoyageResponse, now: Date): boolean {

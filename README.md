@@ -71,6 +71,7 @@ npm run generate:offline-snapshot
 ```
 
 Weather fetching requires `OPENWEATHERMAP_APPID`. Rail departure fetching requires `RAIL_DATA_API_KEY`.
+Vessel fetching uses MarineTraffic polling by default; set `AIS_STREAM_API_KEY` to keep the same fetcher service connected to AISStream while it periodically polls MarineTraffic for coverage and voyage enrichment.
 
 TransXChange ingest requires `TRAVELLINE_FTP_ADDRESS`, `TRAVELLINE_FTP_USERNAME`, and `TRAVELLINE_FTP_PASSWORD` when no local directory or ZIP file is passed. Offline snapshot generation writes `offline/snapshot.sqlite3` and `offline/snapshot.meta.json`; the API serves the SQLite file from `/api/offline/snapshot.sqlite3`.
 

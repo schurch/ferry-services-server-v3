@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import * as cycleTLS from "cycletls";
 import type { CycleTLSClient } from "cycletls";
 import { setTimeout as delay } from "node:timers/promises";
+import { config } from "../config.js";
 import { openDatabase } from "../db/database.js";
 import { saveVessel } from "../db/fetchers.js";
 import { logger } from "../logger.js";
@@ -15,6 +16,12 @@ type OrganisationVessels = {
   organisationId: OrganisationId;
   organisationName: string;
   mmsis: Mmsi[];
+};
+
+type AisStreamMessage = {
+  MessageType?: unknown;
+  Metadata?: Record<string, unknown>;
+  Message?: Record<string, unknown>;
 };
 
 type MarineTrafficVessel = {
@@ -75,6 +82,8 @@ type PreviousVesselPosition = {
 };
 
 const initCycleTLS = cycleTLS.default as unknown as () => Promise<CycleTLSClient>;
+const aisStreamUrl = "wss://stream.aisstream.io/v0/stream";
+const marineTrafficPollIntervalMs = 5 * 60 * 1000;
 const terminalDepartureRadiusKm = 0.75;
 
 const trackedVessels: OrganisationVessels[] = [
@@ -225,6 +234,40 @@ function cleanVesselText(value: string): string | undefined {
   return cleaned === "" ? undefined : cleaned;
 }
 
+function parseAisEta(value: unknown, now = new Date()): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const eta = value as Record<string, unknown>;
+  const month = parseInteger(eta.Month);
+  const day = parseInteger(eta.Day);
+  const hour = parseInteger(eta.Hour);
+  const minute = parseInteger(eta.Minute);
+  if (
+    month === undefined ||
+    day === undefined ||
+    hour === undefined ||
+    minute === undefined ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hour > 23 ||
+    minute > 59
+  ) {
+    return undefined;
+  }
+
+  const currentYear = now.getUTCFullYear();
+  const candidates = [currentYear - 1, currentYear, currentYear + 1]
+    .map((year) => new Date(Date.UTC(year, month - 1, day, hour, minute)));
+  const best = candidates.reduce((nearest, candidate) => (
+    Math.abs(candidate.getTime() - now.getTime()) < Math.abs(nearest.getTime() - now.getTime()) ? candidate : nearest
+  ));
+  return sqlTimestamp(best);
+}
+
 function trackedVesselMap(): Map<number, OrganisationId> {
   const map = new Map<number, OrganisationId>();
   for (const { organisationId, organisationName, mmsis } of trackedVessels) {
@@ -237,6 +280,63 @@ function trackedVesselMap(): Map<number, OrganisationId> {
     }
   }
   return map;
+}
+
+function allTrackedMmsis(vesselOrganisations: Map<number, OrganisationId>): string[] {
+  return [...vesselOrganisations.keys()].map(String);
+}
+
+function aisMessageBody(message: AisStreamMessage): Record<string, unknown> {
+  const messageType = parseText(message.MessageType);
+  const value = messageType ? message.Message?.[messageType] : undefined;
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function parseAisPositionUpdate(message: AisStreamMessage): PositionUpdate | null {
+  const body = aisMessageBody(message);
+  const metadata = message.Metadata ?? {};
+  const mmsi = parseInteger(body.UserID ?? body.MMSI ?? body.Mmsi ?? metadata.MMSI ?? metadata.ShipMMSI);
+  const latitude = parseNumber(body.Latitude ?? metadata.Latitude ?? metadata.latitude);
+  const longitude = parseNumber(body.Longitude ?? metadata.Longitude ?? metadata.longitude);
+  if (mmsi === undefined || latitude === undefined || longitude === undefined) {
+    return null;
+  }
+
+  const destination = parseText(body.Destination);
+  return {
+    mmsi,
+    latitude,
+    longitude,
+    speed: parseNumber(body.Sog ?? body.SOG ?? metadata.Sog ?? metadata.SOG),
+    course: parseNumber(body.Cog ?? body.COG ?? metadata.Cog ?? metadata.COG),
+    destinationName: destination ? cleanVesselText(destination) : undefined,
+    eta: parseAisEta(body.Eta),
+    receivedAt: sqlTimestamp()
+  };
+}
+
+function parseAisShipName(message: AisStreamMessage): { mmsi: number; name: string } | null {
+  const body = aisMessageBody(message);
+  const metadata = message.Metadata ?? {};
+  const mmsi = parseInteger(body.UserID ?? body.MMSI ?? body.Mmsi ?? metadata.MMSI ?? metadata.ShipMMSI);
+  const rawName = parseText(body.Name ?? body.ShipName ?? body.NameExtension ?? metadata.ShipName);
+  if (mmsi === undefined || rawName === undefined) {
+    return null;
+  }
+  return { mmsi, name: capitaliseWords(rawName) };
+}
+
+async function eventDataText(data: unknown): Promise<string> {
+  if (typeof data === "string") {
+    return data;
+  }
+  if (data instanceof ArrayBuffer) {
+    return new TextDecoder().decode(data);
+  }
+  if (data instanceof Blob) {
+    return data.text();
+  }
+  return String(data);
 }
 
 function loadTerminals(db: Database.Database): TerminalReference[] {
@@ -423,6 +523,106 @@ function vesselPosition(
   };
 }
 
+function connectToAisStream(
+  apiKey: string,
+  db: Database.Database,
+  terminals: TerminalReference[],
+  vesselOrganisations: Map<number, OrganisationId>,
+  vesselNames: Map<number, string>
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(aisStreamUrl);
+    let settled = false;
+
+    const settle = (error?: Error): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
+
+    socket.addEventListener("open", () => {
+      const mmsis = allTrackedMmsis(vesselOrganisations);
+      socket.send(JSON.stringify({
+        APIKey: apiKey,
+        BoundingBoxes: [[[-90, -180], [90, 180]]],
+        FiltersShipMMSI: mmsis,
+        FilterMessageTypes: [
+          "PositionReport",
+          "ShipStaticData",
+          "StaticDataReport",
+          "StandardClassBPositionReport",
+          "ExtendedClassBPositionReport"
+        ]
+      }));
+      logger.info({ vesselCount: mmsis.length }, "Subscribed to AISStream vessel updates");
+    });
+
+    socket.addEventListener("message", (event) => {
+      void (async () => {
+        const text = await eventDataText(event.data);
+        const message = JSON.parse(text) as AisStreamMessage;
+        const shipName = parseAisShipName(message);
+        if (shipName && vesselOrganisations.has(shipName.mmsi)) {
+          vesselNames.set(shipName.mmsi, shipName.name);
+        }
+
+        const position = parseAisPositionUpdate(message);
+        if (!position) {
+          return;
+        }
+
+        const vessel = vesselPosition(db, terminals, vesselOrganisations, vesselNames, position);
+        if (!vessel) {
+          return;
+        }
+
+        saveVessel(db, vessel);
+        logger.info({ mmsi: vessel.mmsi, vesselName: vessel.name }, "Saved AISStream vessel update");
+      })().catch((error: unknown) => {
+        logger.warn({ err: error }, "Skipping AISStream message because it could not be processed");
+      });
+    });
+
+    socket.addEventListener("error", () => {
+      socket.close();
+      settle(new Error("AISStream websocket error"));
+    });
+
+    socket.addEventListener("close", (event) => {
+      const reason = event.reason || undefined;
+      logger.warn({ code: event.code, reason }, "AISStream websocket closed");
+      settle();
+    });
+  });
+}
+
+async function runAisStreamLoop(
+  apiKey: string,
+  db: Database.Database,
+  terminals: TerminalReference[],
+  vesselOrganisations: Map<number, OrganisationId>,
+  vesselNames: Map<number, string>
+): Promise<void> {
+  let reconnectDelayMs = 5_000;
+  while (true) {
+    try {
+      await connectToAisStream(apiKey, db, terminals, vesselOrganisations, vesselNames);
+      reconnectDelayMs = 5_000;
+    } catch (error) {
+      logger.warn({ err: error }, "AISStream vessel fetcher disconnected with an error");
+    }
+
+    await delay(reconnectDelayMs);
+    reconnectDelayMs = Math.min(reconnectDelayMs * 2, 60_000);
+  }
+}
+
 function marineTrafficHeaders(): MarineTrafficHeaders {
   return {
     Accept: "application/json, text/plain, */*",
@@ -597,6 +797,22 @@ async function fetchVesselsFromMarineTraffic(
   return true;
 }
 
+async function runMarineTrafficPollLoop(
+  client: MarineTrafficClient,
+  db: Database.Database,
+  terminals: TerminalReference[],
+  vesselOrganisations: Map<number, OrganisationId>,
+  vesselNames: Map<number, string>
+): Promise<void> {
+  while (true) {
+    const completed = await fetchVesselsFromMarineTraffic(client, db, terminals, vesselOrganisations, vesselNames);
+    if (!completed) {
+      process.exitCode = 1;
+    }
+    await delay(marineTrafficPollIntervalMs);
+  }
+}
+
 async function main(): Promise<void> {
   const client = await initCycleTLS();
   let db: Database.Database | undefined;
@@ -606,9 +822,16 @@ async function main(): Promise<void> {
     const terminals = loadTerminals(db);
     const vesselNames = loadVesselNames(db);
     const vesselOrganisations = trackedVesselMap();
-    const completed = await fetchVesselsFromMarineTraffic(client, db, terminals, vesselOrganisations, vesselNames);
-    if (!completed) {
-      process.exitCode = 1;
+    if (config.aisStreamApiKey) {
+      await Promise.all([
+        runAisStreamLoop(config.aisStreamApiKey, db, terminals, vesselOrganisations, vesselNames),
+        runMarineTrafficPollLoop(client, db, terminals, vesselOrganisations, vesselNames)
+      ]);
+    } else {
+      const completed = await fetchVesselsFromMarineTraffic(client, db, terminals, vesselOrganisations, vesselNames);
+      if (!completed) {
+        process.exitCode = 1;
+      }
     }
   } finally {
     await client.exit();
