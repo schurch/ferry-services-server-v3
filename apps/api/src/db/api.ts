@@ -72,6 +72,11 @@ type VesselRow = {
   origin_departed_at: Nullable<string>;
 };
 
+type ScheduledVoyage = {
+  arrival: string;
+  durationMs: number;
+};
+
 type RailDepartureRow = {
   location_id: number;
   departure_name: string;
@@ -228,9 +233,28 @@ function vesselVoyageResponse(row: VesselRow, serviceLocations: LocationResponse
     originLocation,
     destinationLocation,
     departedAt,
-    eta: usableReportedEta(row) ?? scheduledEta(serviceLocations, originLocation, destinationLocation, row, now),
+    eta: voyageEta(serviceLocations, originLocation, destinationLocation, row, now),
     progress
   };
+}
+
+function voyageEta(
+  serviceLocations: LocationResponse[],
+  originLocation: LocationReferenceResponse,
+  destinationLocation: LocationReferenceResponse,
+  row: VesselRow,
+  now: Date
+): string | undefined {
+  const reportedEta = usableReportedEta(row);
+  const scheduledVoyage = matchedScheduledVoyage(serviceLocations, originLocation, destinationLocation, row, now);
+  if (reportedEta === undefined || scheduledVoyage === undefined) {
+    return reportedEta ?? scheduledVoyage?.arrival;
+  }
+
+  const maxEtaDifferenceMs = Math.max(30 * 60 * 1000, scheduledVoyage.durationMs * 2);
+  return Math.abs(new Date(reportedEta).getTime() - new Date(scheduledVoyage.arrival).getTime()) > maxEtaDifferenceMs
+    ? scheduledVoyage.arrival
+    : reportedEta;
 }
 
 function usableReportedEta(row: VesselRow): string | undefined {
@@ -247,13 +271,13 @@ function usableReportedEta(row: VesselRow): string | undefined {
   return reportedEta;
 }
 
-function scheduledEta(
+function matchedScheduledVoyage(
   serviceLocations: LocationResponse[],
   originLocation: LocationReferenceResponse,
   destinationLocation: LocationReferenceResponse,
   row: VesselRow,
   now: Date
-): string | undefined {
+): ScheduledVoyage | undefined {
   const origin = serviceLocations.find((location) => location.id === originLocation.id);
   if (!origin?.scheduledDepartures) {
     return undefined;
@@ -271,13 +295,20 @@ function scheduledEta(
       arrivalMs: new Date(departure.arrival).getTime(),
       departureMs: new Date(departure.departure).getTime()
     }))
+    .filter((departure) => departure.arrivalMs > departure.departureMs)
     .filter((departure) => (
       departure.departureMs <= maxDepartureMs &&
       departure.arrivalMs >= minArrivalMs
     ))
     .sort((left, right) => Math.abs(left.departureMs - departedAtMs) - Math.abs(right.departureMs - departedAtMs));
 
-  return candidates[0]?.arrival;
+  const candidate = candidates[0];
+  return candidate
+    ? {
+        arrival: candidate.arrival,
+        durationMs: candidate.arrivalMs - candidate.departureMs
+      }
+    : undefined;
 }
 
 function isCompletedVoyage(row: VesselRow, voyage: VesselVoyageResponse, now: Date): boolean {

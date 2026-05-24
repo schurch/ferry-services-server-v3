@@ -197,6 +197,68 @@ describe("Rail departure API formatting", () => {
 
     assert.equal(getService(db, 9100, "2026-03-16")?.vessels[0]?.voyage?.eta, "2026-03-16T10:40:00.000Z");
   });
+
+  it("keeps a delayed reported ETA within the route duration tolerance", () => {
+    freezeNow("2026-03-16T09:45:00.000Z");
+
+    currentDb = createTestDatabase();
+    const db = currentDb.db;
+    seedTimestampContractScenario(db);
+
+    db.prepare(`
+      UPDATE vessels
+      SET latitude = ?,
+          longitude = ?,
+          last_received = ?,
+          destination_name = ?,
+          eta = ?,
+          origin_name = ?,
+          origin_departed_at = ?
+      WHERE mmsi = ?
+    `).run(
+      58.7,
+      -3.0,
+      "2026-03-16 09:45:00",
+      "St Margaret's Hope",
+      "2026-03-16 11:00:00",
+      "Gills Bay",
+      "2026-03-16 09:31:00",
+      123456789
+    );
+
+    assert.equal(getService(db, 9100, "2026-03-16")?.vessels[0]?.voyage?.eta, "2026-03-16T11:00:00.000Z");
+  });
+
+  it("falls back to scheduled arrival when the reported ETA is implausibly late for the route", () => {
+    freezeNow("2026-03-16T09:45:00.000Z");
+
+    currentDb = createTestDatabase();
+    const db = currentDb.db;
+    seedTimestampContractScenario(db);
+
+    db.prepare(`
+      UPDATE vessels
+      SET latitude = ?,
+          longitude = ?,
+          last_received = ?,
+          destination_name = ?,
+          eta = ?,
+          origin_name = ?,
+          origin_departed_at = ?
+      WHERE mmsi = ?
+    `).run(
+      58.7,
+      -3.0,
+      "2026-03-16 09:45:00",
+      "St Margaret's Hope",
+      "2026-03-16 21:00:00",
+      "Gills Bay",
+      "2026-03-16 09:31:00",
+      123456789
+    );
+
+    assert.equal(getService(db, 9100, "2026-03-16")?.vessels[0]?.voyage?.eta, "2026-03-16T10:40:00.000Z");
+  });
 });
 
 function freezeNow(isoTimestamp: string): void {
