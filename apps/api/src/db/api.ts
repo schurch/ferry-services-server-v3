@@ -206,7 +206,6 @@ function vesselVoyageResponse(row: VesselRow, serviceLocations: LocationResponse
   const originName = value(row.origin_name);
   const departedAt = optionalTimestampResponse(row.origin_departed_at);
   const reportedDestinationName = value(row.destination_name);
-  const reportedEta = optionalTimestampResponse(row.eta);
 
   if (
     originName === undefined ||
@@ -229,9 +228,23 @@ function vesselVoyageResponse(row: VesselRow, serviceLocations: LocationResponse
     originLocation,
     destinationLocation,
     departedAt,
-    eta: reportedEta ?? scheduledEta(serviceLocations, originLocation, destinationLocation, row, now),
+    eta: usableReportedEta(row) ?? scheduledEta(serviceLocations, originLocation, destinationLocation, row, now),
     progress
   };
+}
+
+function usableReportedEta(row: VesselRow): string | undefined {
+  const reportedEta = optionalTimestampResponse(row.eta);
+  if (reportedEta === undefined) {
+    return undefined;
+  }
+
+  const departedAt = optionalTimestampResponse(row.origin_departed_at);
+  if (departedAt !== undefined && new Date(reportedEta).getTime() < new Date(departedAt).getTime()) {
+    return undefined;
+  }
+
+  return reportedEta;
 }
 
 function scheduledEta(
