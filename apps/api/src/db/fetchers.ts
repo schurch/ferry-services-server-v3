@@ -263,11 +263,23 @@ export function saveServiceStatusObservations(
       source_notice_type,
       title,
       disruption_reason,
-      detail_text,
-      detail_markdown,
+      payload_id,
       display_order
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  const savePayload = db.prepare(`
+    INSERT OR IGNORE INTO service_status_notice_payloads (
+      detail_text,
+      detail_markdown
+    )
+    VALUES (?, ?)
+  `);
+  const findPayload = db.prepare(`
+    SELECT payload_id
+    FROM service_status_notice_payloads
+    WHERE coalesce(detail_text, '') = coalesce(?, '')
+      AND coalesce(detail_markdown, '') = coalesce(?, '')
   `);
 
   const transaction = db.transaction((items: ScrapedService[]) => {
@@ -291,14 +303,22 @@ export function saveServiceStatusObservations(
       const observationId = Number(result.lastInsertRowid);
 
       notices.forEach((notice, index) => {
+        const detailText = notice.detailText ?? null;
+        const detailMarkdown = notice.detailMarkdown ?? null;
+        let payloadId: number | null = null;
+        if (detailText !== null || detailMarkdown !== null) {
+          savePayload.run(detailText, detailMarkdown);
+          const payload = findPayload.get(detailText, detailMarkdown) as { payload_id: number };
+          payloadId = payload.payload_id;
+        }
+
         saveNotice.run(
           observationId,
           notice.sourceNoticeKey ?? `${service.serviceId}:${index}`,
           notice.sourceNoticeType ?? null,
           notice.title,
           notice.disruptionReason ?? null,
-          notice.detailText ?? null,
-          notice.detailMarkdown ?? null,
+          payloadId,
           index
         );
       });

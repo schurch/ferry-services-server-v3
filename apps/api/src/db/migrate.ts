@@ -23,6 +23,7 @@ if (fs.existsSync(migrationsDir)) {
   const applied = new Set(
     db.prepare("SELECT version FROM schema_migrations").all().map((row) => (row as { version: string }).version)
   );
+  let shouldVacuum = false;
 
   for (const fileName of fs.readdirSync(migrationsDir).filter((name) => name.endsWith(".sql")).sort()) {
     if (applied.has(fileName)) {
@@ -35,7 +36,15 @@ if (fs.existsSync(migrationsDir)) {
       db.prepare("INSERT INTO schema_migrations (version) VALUES (?)").run(fileName);
     });
     apply();
+    if (fileName === "006_deduplicate_service_status_notice_payloads.sql") {
+      shouldVacuum = true;
+    }
     logger.info({ fileName }, "Applied migration");
+  }
+
+  if (shouldVacuum) {
+    db.exec("VACUUM");
+    logger.info("Vacuumed database after notice payload deduplication");
   }
 }
 

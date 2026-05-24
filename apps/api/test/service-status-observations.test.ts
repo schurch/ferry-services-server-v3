@@ -90,9 +90,12 @@ describe("service status observations", () => {
       assert.equal(observation.last_updated_date, null);
 
       const notices = db.prepare(`
-        SELECT source_notice_key, source_notice_type, title, disruption_reason, detail_markdown, display_order
-        FROM service_status_observation_notices
-        ORDER BY display_order
+        SELECT n.source_notice_key, n.source_notice_type, n.title, n.disruption_reason,
+          n.detail_text, n.detail_markdown, p.detail_markdown AS payload_detail_markdown,
+          n.display_order
+        FROM service_status_observation_notices n
+        LEFT JOIN service_status_notice_payloads p ON p.payload_id = n.payload_id
+        ORDER BY n.display_order
       `).all() as Array<Record<string, unknown>>;
       assert.deepEqual(notices, [
         {
@@ -100,7 +103,9 @@ describe("service status observations", () => {
           source_notice_type: "SAILING",
           title: "Wednesday 20 May",
           disruption_reason: "Technical",
-          detail_markdown: "Due to a technical issue, an amended timetable will operate.",
+          detail_text: null,
+          detail_markdown: null,
+          payload_detail_markdown: "Due to a technical issue, an amended timetable will operate.",
           display_order: 0
         },
         {
@@ -108,10 +113,19 @@ describe("service status observations", () => {
           source_notice_type: "INFORMATION",
           title: "Subscriber texts",
           disruption_reason: null,
-          detail_markdown: "Generic subscriber text information.",
+          detail_text: null,
+          detail_markdown: null,
+          payload_detail_markdown: "Generic subscriber text information.",
           display_order: 1
         }
       ]);
+
+      saveServiceStatusObservations(db, scrapeRunId, [service], "2026-05-20 12:02:00");
+      const payloadCount = db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM service_status_notice_payloads
+      `).get() as { count: number };
+      assert.equal(payloadCount.count, 2);
     } finally {
       cleanup();
     }
