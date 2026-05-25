@@ -1,11 +1,21 @@
 import { API_BASE } from "../constants";
-import type { ApiService, Service, ServiceStatus } from "../types";
+import type { ApiReliabilityPeriod, ApiService, ReliabilityPeriod, Service, ServiceStatus } from "../types";
 
 function toStatus(value: number): ServiceStatus {
   if (value === 0) return "normal";
   if (value === 1) return "disrupted";
   if (value === 2) return "cancelled";
   return "unknown";
+}
+
+function toReliabilityPeriod(period: ApiReliabilityPeriod): ReliabilityPeriod {
+  return {
+    period: period.period,
+    start: period.start,
+    end: period.end,
+    totalSailings: period.total_sailings,
+    statuses: period.statuses
+  };
 }
 
 function toService(raw: ApiService): Service {
@@ -76,7 +86,15 @@ function toService(raw: ApiService): Service {
           facebook: raw.operator.facebook
         }
       : null,
-    scheduledDeparturesAvailable: Boolean(raw.scheduled_departures_available)
+    scheduledDeparturesAvailable: Boolean(raw.scheduled_departures_available),
+    reliability: raw.reliability
+      ? {
+          statusBreakdown: {
+            last7Days: toReliabilityPeriod(raw.reliability.status_breakdown.last_7_days),
+            last30Days: toReliabilityPeriod(raw.reliability.status_breakdown.last_30_days)
+          }
+        }
+      : null
   };
 }
 

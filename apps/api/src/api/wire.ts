@@ -3,6 +3,8 @@ import type {
   LocationWeatherResponse,
   OrganisationResponse,
   RailDepartureResponse,
+  ReliabilityPeriodResponse,
+  ReliabilityResponse,
   ServiceResponse,
   TimetableDocumentResponse,
   VesselResponse
@@ -120,6 +122,29 @@ export function timetableDocumentToApi(document: TimetableDocumentResponse): Rec
   });
 }
 
+function reliabilityPeriodToApi(period: ReliabilityPeriodResponse): Record<string, unknown> {
+  return {
+    period: period.period,
+    start: period.start,
+    end: period.end,
+    total_sailings: period.totalSailings,
+    statuses: {
+      normal: period.statuses.normal,
+      disrupted: period.statuses.disrupted,
+      cancelled: period.statuses.cancelled
+    }
+  };
+}
+
+function reliabilityToApi(reliability: ReliabilityResponse): Record<string, unknown> {
+  return {
+    status_breakdown: {
+      last_7_days: reliabilityPeriodToApi(reliability.statusBreakdown.last7Days),
+      last_30_days: reliabilityPeriodToApi(reliability.statusBreakdown.last30Days)
+    }
+  };
+}
+
 export function serviceToApi(
   service: ServiceResponse,
   options: { includeAdditionalInfo?: boolean; includeLocationDetails?: boolean; includeVessels?: boolean } = {}
@@ -137,6 +162,7 @@ export function serviceToApi(
     operator: service.operator ? organisationToApi(service.operator) : undefined,
     scheduled_departures_available: service.scheduledDeparturesAvailable,
     updated: service.updated,
-    timetable_documents: service.timetableDocuments?.map(timetableDocumentToApi)
+    timetable_documents: service.timetableDocuments?.map(timetableDocumentToApi),
+    reliability: service.reliability ? reliabilityToApi(service.reliability) : undefined
   });
 }

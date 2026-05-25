@@ -13,6 +13,31 @@ export type Service = {
   vessels: Vessel[];
   operator: ServiceOperator | null;
   scheduledDeparturesAvailable: boolean;
+  reliability?: Reliability | null;
+};
+
+export type Reliability = {
+  statusBreakdown: {
+    last7Days: ReliabilityPeriod;
+    last30Days: ReliabilityPeriod;
+  };
+};
+
+export type ReliabilityPeriod = {
+  period: "last_7_days" | "last_30_days";
+  start: string;
+  end: string;
+  totalSailings: number;
+  statuses: {
+    normal: ReliabilityStatusEntry;
+    disrupted: ReliabilityStatusEntry;
+    cancelled: ReliabilityStatusEntry;
+  };
+};
+
+export type ReliabilityStatusEntry = {
+  count: number;
+  percentage: number;
 };
 
 export type Location = {
@@ -88,6 +113,31 @@ export type ApiService = {
   vessels: ApiVessel[] | null;
   operator: ApiOperator | null;
   scheduled_departures_available?: boolean | null;
+  reliability?: ApiReliability | null;
+};
+
+export type ApiReliability = {
+  status_breakdown: {
+    last_7_days: ApiReliabilityPeriod;
+    last_30_days: ApiReliabilityPeriod;
+  };
+};
+
+export type ApiReliabilityPeriod = {
+  period: "last_7_days" | "last_30_days";
+  start: string;
+  end: string;
+  total_sailings: number;
+  statuses: {
+    normal: ApiReliabilityStatusEntry;
+    disrupted: ApiReliabilityStatusEntry;
+    cancelled: ApiReliabilityStatusEntry;
+  };
+};
+
+export type ApiReliabilityStatusEntry = {
+  count: number;
+  percentage: number;
 };
 
 export type ApiLocation = {

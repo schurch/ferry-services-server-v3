@@ -7,6 +7,9 @@ import type {
   LocationWeatherResponse,
   OrganisationResponse,
   RailDepartureResponse,
+  ReliabilityPeriodResponse,
+  ReliabilityResponse,
+  ReliabilityStatusKey,
   ServiceResponse,
   ServiceStatus,
   TimetableDocumentResponse,
@@ -102,6 +105,14 @@ type TimetableDocumentRow = {
 type TimetableDocumentServiceLinkRow = {
   timetable_document_id: number;
   service_id: number;
+};
+
+type ReliabilityStatusCounts = Record<ReliabilityStatusKey, number>;
+
+type ReliabilityDailyStatus = {
+  date: string;
+  status: ReliabilityStatusKey;
+  sailings: number;
 };
 
 export type LocationDepartureRow = {
@@ -577,6 +588,39 @@ function padTo<T>(size: number, filler: T, values: T[]): T[] {
   return [...values, ...Array(size).fill(filler)].slice(0, size);
 }
 
+function startOfUtcDay(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function addUtcDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+function reliabilityStatusKey(status: ServiceStatus): ReliabilityStatusKey | undefined {
+  if (status === 0) return "normal";
+  if (status === 1) return "disrupted";
+  if (status === 2) return "cancelled";
+  return undefined;
+}
+
+function emptyReliabilityCounts(): ReliabilityStatusCounts {
+  return {
+    normal: 0,
+    disrupted: 0,
+    cancelled: 0
+  };
+}
+
+function roundedPercentage(count: number, total: number): number {
+  if (total === 0) {
+    return 0;
+  }
+
+  return Math.round(((count / total) * 100) * 10) / 10;
+}
+
 function createLocationLookup(
   db: Database.Database,
   scheduledDepartures = new Map<number, DepartureResponse[]>(),
@@ -791,6 +835,7 @@ function serviceResponse(
     organisations: Map<number, OrganisationResponse>;
     vessels: Map<number, VesselRow[]>;
     timetableDocuments?: Map<number, TimetableDocumentResponse[]>;
+    reliability?: Map<number, ReliabilityResponse>;
   },
   now = new Date()
 ): ServiceResponse {
@@ -811,7 +856,8 @@ function serviceResponse(
     operator: lookups.organisations.get(row.service_id),
     scheduledDeparturesAvailable: lookups.scheduledServices.has(row.service_id),
     updated: timestampResponse(row.updated),
-    timetableDocuments: lookups.timetableDocuments === undefined ? undefined : lookups.timetableDocuments.get(row.service_id) ?? []
+    timetableDocuments: lookups.timetableDocuments === undefined ? undefined : lookups.timetableDocuments.get(row.service_id) ?? [],
+    reliability: lookups.reliability?.get(row.service_id)
   };
 }
 
@@ -1275,6 +1321,116 @@ export function listLocationDepartureRows(db: Database.Database, serviceId: numb
   return rows;
 }
 
+function latestStatusByDate(
+  db: Database.Database,
+  serviceId: number,
+  start: string,
+  end: string
+): Map<string, ServiceStatus> {
+  const rows = db.prepare(`
+    WITH ranked_observations AS (
+      SELECT
+        date(observed_at) AS observed_date,
+        status,
+        ROW_NUMBER() OVER (
+          PARTITION BY date(observed_at)
+          ORDER BY observed_at DESC, observation_id DESC
+        ) AS rank
+      FROM service_status_observations
+      WHERE service_id = ?
+        AND datetime(observed_at) >= datetime(?)
+        AND datetime(observed_at) < datetime(?)
+    )
+    SELECT observed_date, status
+    FROM ranked_observations
+    WHERE rank = 1
+  `).all(serviceId, start, end) as Array<{ observed_date: string; status: ServiceStatus }>;
+
+  return new Map(rows.map((row) => [row.observed_date, row.status]));
+}
+
+function reliabilityDailyStatuses(
+  db: Database.Database,
+  serviceId: number,
+  start: Date,
+  end: Date
+): ReliabilityDailyStatus[] {
+  const statusByDate = latestStatusByDate(db, serviceId, sqlTimestamp(start), sqlTimestamp(end));
+  const statuses: ReliabilityDailyStatus[] = [];
+
+  for (let current = new Date(start); current < end; current = addUtcDays(current, 1)) {
+    const queryDate = dateString(current);
+    const status = reliabilityStatusKey(statusByDate.get(queryDate) ?? -99);
+    if (status === undefined) {
+      continue;
+    }
+
+    statuses.push({
+      date: queryDate,
+      status,
+      sailings: listLocationDepartureRows(db, serviceId, queryDate).length
+    });
+  }
+
+  return statuses;
+}
+
+function reliabilityPeriodResponse(
+  period: ReliabilityPeriodResponse["period"],
+  startDate: Date,
+  endDate: Date,
+  dailyStatuses: ReliabilityDailyStatus[]
+): ReliabilityPeriodResponse {
+  const counts = emptyReliabilityCounts();
+  let totalSailings = 0;
+  const startDay = dateString(startDate);
+  const endDay = dateString(endDate);
+
+  for (const dailyStatus of dailyStatuses) {
+    if (dailyStatus.date < startDay || dailyStatus.date >= endDay) {
+      continue;
+    }
+
+    counts[dailyStatus.status] += dailyStatus.sailings;
+    totalSailings += dailyStatus.sailings;
+  }
+
+  return {
+    period,
+    start: startDate.toISOString(),
+    end: endDate.toISOString(),
+    totalSailings,
+    statuses: {
+      normal: {
+        count: counts.normal,
+        percentage: roundedPercentage(counts.normal, totalSailings)
+      },
+      disrupted: {
+        count: counts.disrupted,
+        percentage: roundedPercentage(counts.disrupted, totalSailings)
+      },
+      cancelled: {
+        count: counts.cancelled,
+        percentage: roundedPercentage(counts.cancelled, totalSailings)
+      }
+    }
+  };
+}
+
+function createServiceReliability(db: Database.Database, serviceId: number, now: Date): ReliabilityResponse {
+  const endDate = addUtcDays(startOfUtcDay(now), 1);
+  const thirtyDayStartDate = addUtcDays(endDate, -30);
+  const sevenDayStartDate = addUtcDays(endDate, -7);
+  const dailyStatuses = reliabilityDailyStatuses(db, serviceId, thirtyDayStartDate, endDate);
+
+  return {
+    statusBreakdown: {
+      last7Days: reliabilityPeriodResponse("last_7_days", sevenDayStartDate, endDate, dailyStatuses),
+      last30Days: reliabilityPeriodResponse("last_30_days", thirtyDayStartDate, endDate, dailyStatuses)
+    }
+  };
+}
+
 function departureResponseFromRow(row: LocationDepartureRow): DepartureResponse {
   return {
     destination: {
@@ -1497,7 +1653,8 @@ export function getService(db: Database.Database, serviceId: number, departuresD
     locations: createServiceLocationLookup(db, serviceId, locationDepartures, nextDepartureLookup),
     organisations: createServiceOrganisationLookup(db, serviceId),
     vessels: createSingleServiceVesselLookup(db, serviceId, now),
-    timetableDocuments: createServiceTimetableDocumentLookup(db, serviceId)
+    timetableDocuments: createServiceTimetableDocumentLookup(db, serviceId),
+    reliability: new Map([[serviceId, createServiceReliability(db, serviceId, now)]])
   }, now);
 }
 

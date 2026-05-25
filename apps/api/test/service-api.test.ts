@@ -33,6 +33,91 @@ describe("Service API responses", () => {
     const detail = detailResponse.json() as { operator?: Record<string, unknown> };
     assertFullCalmacOperator(detail.operator);
   });
+
+  it("includes reliability status breakdown on service detail responses", async () => {
+    currentDb = createTestDatabase();
+    seedReliabilityFixture(currentDb);
+    currentApp = await buildApp({
+      db: currentDb.db,
+      now: () => new Date("2026-05-25T12:00:00Z")
+    });
+    const app = currentApp;
+    assert.notEqual(app, null);
+
+    const response = await app.inject({ method: "GET", url: "/api/services/5?departuresDate=2026-05-25" });
+    assert.equal(response.statusCode, 200);
+
+    const detail = response.json() as {
+      reliability?: {
+        status_breakdown: Record<string, {
+          period: string;
+          total_sailings: number;
+          statuses: Record<string, { count: number; percentage: number }>;
+        }>;
+      };
+    };
+
+    assert.deepEqual(detail.reliability, {
+      status_breakdown: {
+        last_7_days: {
+          period: "last_7_days",
+          start: "2026-05-19T00:00:00.000Z",
+          end: "2026-05-26T00:00:00.000Z",
+          total_sailings: 2,
+          statuses: {
+            normal: { count: 0, percentage: 0 },
+            disrupted: { count: 1, percentage: 50 },
+            cancelled: { count: 1, percentage: 50 }
+          }
+        },
+        last_30_days: {
+          period: "last_30_days",
+          start: "2026-04-26T00:00:00.000Z",
+          end: "2026-05-26T00:00:00.000Z",
+          total_sailings: 2,
+          statuses: {
+            normal: { count: 0, percentage: 0 },
+            disrupted: { count: 1, percentage: 50 },
+            cancelled: { count: 1, percentage: 50 }
+          }
+        }
+      }
+    });
+  });
+
+  it("documents reliability fields in the OpenAPI service detail schema", async () => {
+    currentDb = createTestDatabase();
+    currentApp = await buildApp({ db: currentDb.db });
+    const app = currentApp;
+    assert.notEqual(app, null);
+
+    const response = await app.inject({ method: "GET", url: "/openapi.json" });
+    assert.equal(response.statusCode, 200);
+
+    const openapi = response.json() as {
+      components?: {
+        schemas?: Record<string, {
+          properties?: Record<string, unknown>;
+        }>;
+      };
+    };
+    const schemas = openapi.components?.schemas ?? {};
+
+    assert.deepEqual(schemas.ServiceResponse?.properties?.reliability, {
+      $ref: "#/components/schemas/ReliabilityResponse"
+    });
+    assert.deepEqual(schemas.ReliabilityResponse?.properties?.status_breakdown, {
+      type: "object",
+      properties: {
+        last_7_days: { $ref: "#/components/schemas/ReliabilityPeriodResponse" },
+        last_30_days: { $ref: "#/components/schemas/ReliabilityPeriodResponse" }
+      },
+      required: ["last_7_days", "last_30_days"],
+      description: "Rolling reliability breakdowns for this service, keyed by period to prevent duplicate ranges."
+    });
+    assert.notEqual(schemas.ReliabilityPeriodResponse?.properties?.total_sailings, undefined);
+    assert.notEqual(schemas.ReliabilityStatusBreakdownEntry?.properties?.percentage, undefined);
+  });
 });
 
 function assertFullCalmacOperator(operator: Record<string, unknown> | undefined): void {
@@ -46,4 +131,158 @@ function assertFullCalmacOperator(operator: Record<string, unknown> | undefined)
     x: "https://x.com/calmacferries",
     facebook: "https://www.facebook.com/calmacferries"
   });
+}
+
+function seedReliabilityFixture(testDb: TestDatabase): void {
+  testDb.db.exec(`
+    INSERT INTO transxchange_documents (
+      document_id,
+      source_path,
+      source_file_name,
+      source_version_key,
+      source_creation_datetime,
+      source_modification_datetime,
+      imported_at
+    ) VALUES (
+      1,
+      'fixture',
+      'fixture.xml',
+      'fixture-v1',
+      '2026-05-01 00:00:00',
+      '2026-05-01 00:00:00',
+      '2026-05-01 00:00:00'
+    );
+
+    INSERT INTO transxchange_services (
+      document_id,
+      service_code,
+      operator_ref,
+      mode,
+      description,
+      origin,
+      destination,
+      start_date,
+      end_date
+    ) VALUES (
+      1,
+      'CALM_CM5',
+      'CALMAC',
+      'ferry',
+      'Ardrossan - Brodick',
+      'Ardrossan',
+      'Brodick',
+      '2026-01-01',
+      '2026-12-31'
+    );
+
+    INSERT INTO transxchange_journey_patterns (
+      document_id,
+      journey_pattern_id,
+      service_code,
+      direction
+    ) VALUES (
+      1,
+      'JP1',
+      'CALM_CM5',
+      'outbound'
+    );
+
+    INSERT INTO transxchange_journey_pattern_sections (
+      document_id,
+      journey_pattern_id,
+      section_ref,
+      section_order
+    ) VALUES (
+      1,
+      'JP1',
+      'SEC1',
+      1
+    );
+
+    INSERT INTO transxchange_journey_pattern_timing_links (
+      document_id,
+      journey_pattern_timing_link_id,
+      journey_pattern_section_ref,
+      sort_order,
+      from_stop_point_ref,
+      from_activity,
+      from_timing_status,
+      to_stop_point_ref,
+      to_activity,
+      to_timing_status,
+      route_link_ref,
+      direction,
+      run_seconds,
+      from_wait_seconds
+    ) VALUES (
+      1,
+      'TL1',
+      'SEC1',
+      1,
+      '9300ARD',
+      '',
+      '',
+      '9300BRB',
+      '',
+      '',
+      'RL1',
+      'outbound',
+      3600,
+      0
+    );
+
+    INSERT INTO transxchange_vehicle_journeys (
+      document_id,
+      vehicle_journey_code,
+      service_code,
+      line_id,
+      journey_pattern_id,
+      operator_ref,
+      departure_time,
+      note,
+      note_code
+    ) VALUES (
+      1,
+      'VJ1',
+      'CALM_CM5',
+      'LINE1',
+      'JP1',
+      'CALMAC',
+      '08:00:00',
+      '',
+      ''
+    );
+
+    INSERT INTO transxchange_vehicle_journey_days (
+      document_id,
+      vehicle_journey_code,
+      day_rule
+    ) VALUES (
+      1,
+      'VJ1',
+      'monday_to_sunday'
+    );
+
+    INSERT INTO service_scrape_runs (
+      scrape_run_id,
+      operator_name,
+      organisation_id,
+      source_name,
+      started_at,
+      completed_at,
+      success
+    ) VALUES
+      (1, 'CalMac', 1, 'fixture', '2026-05-24 08:00:00', '2026-05-24 08:05:00', 1),
+      (2, 'CalMac', 1, 'fixture', '2026-05-25 08:00:00', '2026-05-25 08:05:00', 1);
+
+    INSERT INTO service_status_observations (
+      observation_id,
+      scrape_run_id,
+      service_id,
+      observed_at,
+      status
+    ) VALUES
+      (1, 1, 5, '2026-05-24 09:00:00', 1),
+      (2, 2, 5, '2026-05-25 09:00:00', 2);
+  `);
 }

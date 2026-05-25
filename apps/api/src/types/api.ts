@@ -102,6 +102,28 @@ export type TimetableDocumentResponse = {
   updated: string;
 };
 
+export type ReliabilityStatusKey = "normal" | "disrupted" | "cancelled";
+
+export type ReliabilityStatusBreakdownEntry = {
+  count: number;
+  percentage: number;
+};
+
+export type ReliabilityPeriodResponse = {
+  period: "last_7_days" | "last_30_days";
+  start: string;
+  end: string;
+  totalSailings: number;
+  statuses: Record<ReliabilityStatusKey, ReliabilityStatusBreakdownEntry>;
+};
+
+export type ReliabilityResponse = {
+  statusBreakdown: {
+    last7Days: ReliabilityPeriodResponse;
+    last30Days: ReliabilityPeriodResponse;
+  };
+};
+
 export type ServiceResponse = {
   serviceId: number;
   area: string;
@@ -116,4 +138,5 @@ export type ServiceResponse = {
   scheduledDeparturesAvailable: boolean;
   updated: string;
   timetableDocuments?: TimetableDocumentResponse[];
+  reliability?: ReliabilityResponse;
 };

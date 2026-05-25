@@ -130,6 +130,43 @@ export const TimetableDocumentResponseSchema = Type.Object({
   updated: Type.Ref(UTCTimeSchema)
 }, { $id: "TimetableDocumentResponse" });
 
+export const ReliabilityStatusBreakdownEntrySchema = Type.Object({
+  count: Type.Integer({
+    minimum: 0,
+    description: "Number of scheduled sailings whose latest observed service status for that day matched this category."
+  }),
+  percentage: Type.Number({
+    minimum: 0,
+    maximum: 100,
+    description: "Percentage of scheduled sailings in the period represented by this status category, rounded to one decimal place."
+  })
+}, { $id: "ReliabilityStatusBreakdownEntry" });
+
+export const ReliabilityPeriodResponseSchema = Type.Object({
+  period: Type.Union([
+    Type.Literal("last_7_days"),
+    Type.Literal("last_30_days")
+  ], { description: "Rolling reliability window." }),
+  start: Type.Ref(UTCTimeSchema, { description: "Inclusive UTC start of the reliability window." }),
+  end: Type.Ref(UTCTimeSchema, { description: "Exclusive UTC end of the reliability window." }),
+  total_sailings: Type.Integer({
+    minimum: 0,
+    description: "Total scheduled sailings in the period that had an observed service status."
+  }),
+  statuses: Type.Object({
+    normal: Type.Ref(ReliabilityStatusBreakdownEntrySchema),
+    disrupted: Type.Ref(ReliabilityStatusBreakdownEntrySchema),
+    cancelled: Type.Ref(ReliabilityStatusBreakdownEntrySchema)
+  }, { description: "Breakdown of scheduled sailings by latest observed daily service status." })
+}, { $id: "ReliabilityPeriodResponse" });
+
+export const ReliabilityResponseSchema = Type.Object({
+  status_breakdown: Type.Object({
+    last_7_days: Type.Ref(ReliabilityPeriodResponseSchema),
+    last_30_days: Type.Ref(ReliabilityPeriodResponseSchema)
+  }, { description: "Rolling reliability breakdowns for this service, keyed by period to prevent duplicate ranges." })
+}, { $id: "ReliabilityResponse" });
+
 export const ServiceResponseSchema = Type.Object({
   service_id: Type.Integer(),
   area: Type.String(),
@@ -143,7 +180,10 @@ export const ServiceResponseSchema = Type.Object({
   operator: Type.Optional(Type.Ref(OrganisationResponseSchema)),
   scheduled_departures_available: Type.Boolean(),
   updated: Type.Ref(UTCTimeSchema),
-  timetable_documents: Type.Optional(Type.Array(Type.Ref(TimetableDocumentResponseSchema)))
+  timetable_documents: Type.Optional(Type.Array(Type.Ref(TimetableDocumentResponseSchema))),
+  reliability: Type.Optional(Type.Ref(ReliabilityResponseSchema, {
+    description: "Rolling status reliability metrics for service detail responses."
+  }))
 }, { $id: "ServiceResponse" });
 
 export const ServiceListResponseSchema = Type.Object({
