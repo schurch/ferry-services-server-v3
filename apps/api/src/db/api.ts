@@ -74,7 +74,6 @@ type VesselRow = {
 
 type ScheduledVoyage = {
   arrival: string;
-  durationMs: number;
 };
 
 type RailDepartureRow = {
@@ -227,6 +226,9 @@ function vesselVoyageResponse(row: VesselRow, serviceLocations: LocationResponse
   if (originLocation === undefined || destinationLocation === undefined) {
     return undefined;
   }
+  if (originLocation.id === destinationLocation.id) {
+    return undefined;
+  }
 
   const progress = computeProgress(originLocation, destinationLocation, row.latitude, row.longitude);
   return {
@@ -245,30 +247,7 @@ function voyageEta(
   row: VesselRow,
   now: Date
 ): string | undefined {
-  const reportedEta = usableReportedEta(row);
-  const scheduledVoyage = matchedScheduledVoyage(serviceLocations, originLocation, destinationLocation, row, now);
-  if (reportedEta === undefined || scheduledVoyage === undefined) {
-    return reportedEta ?? scheduledVoyage?.arrival;
-  }
-
-  const maxEtaDifferenceMs = Math.max(30 * 60 * 1000, scheduledVoyage.durationMs * 2);
-  return Math.abs(new Date(reportedEta).getTime() - new Date(scheduledVoyage.arrival).getTime()) > maxEtaDifferenceMs
-    ? scheduledVoyage.arrival
-    : reportedEta;
-}
-
-function usableReportedEta(row: VesselRow): string | undefined {
-  const reportedEta = optionalTimestampResponse(row.eta);
-  if (reportedEta === undefined) {
-    return undefined;
-  }
-
-  const departedAt = optionalTimestampResponse(row.origin_departed_at);
-  if (departedAt !== undefined && new Date(reportedEta).getTime() < new Date(departedAt).getTime()) {
-    return undefined;
-  }
-
-  return reportedEta;
+  return matchedScheduledVoyage(serviceLocations, originLocation, destinationLocation, row, now)?.arrival;
 }
 
 function matchedScheduledVoyage(
@@ -305,8 +284,7 @@ function matchedScheduledVoyage(
   const candidate = candidates[0];
   return candidate
     ? {
-        arrival: candidate.arrival,
-        durationMs: candidate.arrivalMs - candidate.departureMs
+        arrival: candidate.arrival
       }
     : undefined;
 }
@@ -316,7 +294,26 @@ function isCompletedVoyage(row: VesselRow, voyage: VesselVoyageResponse, now: Da
   if (voyage.eta && now.getTime() - new Date(voyage.eta).getTime() > graceMs) {
     return true;
   }
+  if (distanceKm(row, voyage.destinationLocation) <= completionRadiusKm(voyage)) {
+    return true;
+  }
   return voyage.progress === 1 && now.getTime() - parseSqlTimestamp(row.last_received).getTime() > graceMs;
+}
+
+function completionRadiusKm(voyage: VesselVoyageResponse): number {
+  const routeDistanceKm = distanceKm(voyage.originLocation, voyage.destinationLocation);
+  return Math.min(0.75, Math.max(0.1, routeDistanceKm * 0.15));
+}
+
+function distanceKm(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }): number {
+  const earthRadiusKm = 6371;
+  const lat1 = a.latitude * Math.PI / 180;
+  const lat2 = b.latitude * Math.PI / 180;
+  const deltaLatitude = (b.latitude - a.latitude) * Math.PI / 180;
+  const deltaLongitude = (b.longitude - a.longitude) * Math.PI / 180;
+  const haversine = Math.sin(deltaLatitude / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLongitude / 2) ** 2;
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
 }
 
 function computeProgress(

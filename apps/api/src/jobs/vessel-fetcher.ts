@@ -458,6 +458,115 @@ function destinationFromOrigin(
   return undefined;
 }
 
+function normalizeLocationName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function matchingTerminalDestination(
+  terminals: TerminalReference[],
+  organisationId: number,
+  rawDestination: string | undefined,
+  excludedName?: string
+): string | undefined {
+  if (rawDestination === undefined) {
+    return undefined;
+  }
+
+  const target = normalizeLocationName(rawDestination);
+  return terminals.find((terminal) => (
+    terminal.organisationId === organisationId &&
+    terminal.name !== excludedName &&
+    normalizeLocationName(terminal.name) === target
+  ))?.name;
+}
+
+function routeMatchedDestination(
+  terminals: TerminalReference[],
+  origin: TerminalReference | undefined,
+  position: PositionUpdate,
+  rawDestination: string | undefined
+): string | undefined {
+  if (origin === undefined || rawDestination === undefined) {
+    return undefined;
+  }
+
+  const target = normalizeLocationName(rawDestination);
+  const originCandidates = terminals.filter((terminal) => (
+    terminal.organisationId === origin.organisationId &&
+    terminal.name === origin.name
+  ));
+
+  for (const candidate of originCandidates) {
+    const routeTerminals = serviceTerminals(terminals, candidate.serviceId);
+    const destination = routeTerminals.find((terminal) => (
+      terminal.name !== candidate.name &&
+      normalizeLocationName(terminal.name) === target
+    ));
+    if (destination && withinServiceBox(routeTerminals, position)) {
+      return destination.name;
+    }
+  }
+
+  return undefined;
+}
+
+function routeDerivedDestination(
+  terminals: TerminalReference[],
+  origin: TerminalReference | undefined,
+  position: PositionUpdate
+): string | undefined {
+  return origin ? destinationFromOrigin(terminals, origin, position) : undefined;
+}
+
+function originFromName(
+  terminals: TerminalReference[],
+  organisationId: number,
+  rawOrigin: string | undefined
+): TerminalReference | undefined {
+  if (rawOrigin === undefined) {
+    return undefined;
+  }
+
+  const target = normalizeLocationName(rawOrigin);
+  return terminals.find((terminal) => (
+    terminal.organisationId === organisationId &&
+    normalizeLocationName(terminal.name) === target
+  ));
+}
+
+function destinationAtTerminal(
+  terminals: TerminalReference[],
+  organisationId: number,
+  currentTerminal: TerminalReference,
+  position: PositionUpdate,
+  fallback: string | undefined
+): string | undefined {
+  return matchingTerminalDestination(terminals, organisationId, position.destinationName, currentTerminal.name)
+    ?? matchingTerminalDestination(terminals, organisationId, fallback, currentTerminal.name);
+}
+
+function destinationForPosition(
+  terminals: TerminalReference[],
+  organisationId: number,
+  position: PositionUpdate,
+  origin: TerminalReference | undefined,
+  fallback: string | undefined
+): string | undefined {
+  if (origin === undefined) {
+    return matchingTerminalDestination(terminals, organisationId, position.destinationName)
+      ?? matchingTerminalDestination(terminals, organisationId, fallback);
+  }
+
+  return routeMatchedDestination(terminals, origin, position, position.destinationName)
+    ?? routeDerivedDestination(terminals, origin, position)
+    ?? routeMatchedDestination(terminals, origin, position, fallback);
+}
+
 export function enrichVoyage(
   db: Database.Database,
   terminals: TerminalReference[],
@@ -470,8 +579,8 @@ export function enrichVoyage(
 
   if (currentTerminal) {
     return {
-      destinationName: position.destinationName ?? previous?.destinationName,
-      eta: position.eta ?? previous?.eta,
+      destinationName: destinationAtTerminal(terminals, organisationId, currentTerminal, position, previous?.destinationName),
+      eta: etaAtTerminal(position.eta, previous?.eta, position.receivedAt),
       originName: currentTerminal.name
     };
   }
@@ -479,7 +588,7 @@ export function enrichVoyage(
   if (previousTerminal) {
     const originDepartedAt = position.receivedAt;
     return {
-      destinationName: position.destinationName ?? destinationFromOrigin(terminals, previousTerminal, position),
+      destinationName: destinationForPosition(terminals, organisationId, position, previousTerminal, undefined),
       eta: etaForNewDeparture(position.eta, previous?.eta, originDepartedAt),
       originName: previousTerminal.name,
       originDepartedAt
@@ -487,8 +596,9 @@ export function enrichVoyage(
   }
 
   if (previous?.originName && previous.originDepartedAt) {
+    const origin = originFromName(terminals, organisationId, previous.originName);
     return {
-      destinationName: position.destinationName ?? previous.destinationName,
+      destinationName: destinationForPosition(terminals, organisationId, position, origin, previous.destinationName),
       eta: position.eta ?? previous.eta,
       originName: previous.originName,
       originDepartedAt: previous.originDepartedAt
@@ -496,6 +606,11 @@ export function enrichVoyage(
   }
 
   return {};
+}
+
+function etaAtTerminal(positionEta: string | undefined, previousEta: string | undefined, receivedAt: string): string | undefined {
+  const eta = positionEta ?? previousEta;
+  return eta && new Date(eta).getTime() >= new Date(receivedAt).getTime() ? eta : undefined;
 }
 
 function etaForNewDeparture(positionEta: string | undefined, previousEta: string | undefined, originDepartedAt: string): string | undefined {

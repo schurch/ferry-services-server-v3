@@ -119,6 +119,178 @@ describe("vessel persistence", () => {
       originDepartedAt: "2026-05-24 08:48:08"
     });
   });
+
+  it("uses the route-derived destination when the reported destination is not a known terminal", () => {
+    currentDb = createTestDatabase();
+    const db = currentDb.db;
+    const terminals = [
+      { organisationId: 1, serviceId: 5, name: "Ardrossan", latitude: 55.640516, longitude: -4.823062 },
+      { organisationId: 1, serviceId: 5, name: "Brodick", latitude: 55.576606, longitude: -5.139172 }
+    ];
+
+    saveVessel(db, vesselPosition({
+      latitude: 55.640516,
+      longitude: -4.823062,
+      lastReceived: "2026-05-24 08:40:00",
+      destinationName: "Not Available",
+      originName: "Ardrossan"
+    }));
+
+    assert.deepEqual(enrichVoyage(db, terminals, 1, {
+      mmsi: 123456789,
+      latitude: 55.61,
+      longitude: -4.95,
+      destinationName: "Not Available",
+      receivedAt: "2026-05-24 08:48:08"
+    }), {
+      destinationName: "Brodick",
+      eta: undefined,
+      originName: "Ardrossan",
+      originDepartedAt: "2026-05-24 08:48:08"
+    });
+  });
+
+  it("does not pair an origin with a reported destination from another route", () => {
+    currentDb = createTestDatabase();
+    const db = currentDb.db;
+    const terminals = [
+      { organisationId: 1, serviceId: 5, name: "Ardrossan", latitude: 55.640516, longitude: -4.823062 },
+      { organisationId: 1, serviceId: 5, name: "Brodick", latitude: 55.576606, longitude: -5.139172 },
+      { organisationId: 1, serviceId: 39, name: "Gourock", latitude: 55.959938, longitude: -4.814372 },
+      { organisationId: 1, serviceId: 39, name: "Kilcreggan", latitude: 55.984704635223416, longitude: -4.820426740646081 }
+    ];
+
+    saveVessel(db, vesselPosition({
+      latitude: 55.640516,
+      longitude: -4.823062,
+      lastReceived: "2026-05-24 08:40:00",
+      destinationName: "Brodick",
+      originName: "Ardrossan"
+    }));
+
+    assert.deepEqual(enrichVoyage(db, terminals, 1, {
+      mmsi: 123456789,
+      latitude: 55.61,
+      longitude: -4.95,
+      destinationName: "Kilcreggan",
+      receivedAt: "2026-05-24 08:48:08"
+    }), {
+      destinationName: "Brodick",
+      eta: undefined,
+      originName: "Ardrossan",
+      originDepartedAt: "2026-05-24 08:48:08"
+    });
+  });
+
+  it("canonicalises reported destinations to known terminal names", () => {
+    currentDb = createTestDatabase();
+    const db = currentDb.db;
+    const terminals = [
+      { organisationId: 1, serviceId: 5, name: "Ardrossan", latitude: 55.640516, longitude: -4.823062 },
+      { organisationId: 1, serviceId: 5, name: "Brodick", latitude: 55.576606, longitude: -5.139172 }
+    ];
+
+    assert.deepEqual(enrichVoyage(db, terminals, 1, {
+      mmsi: 123456789,
+      latitude: 55.640516,
+      longitude: -4.823062,
+      destinationName: "BRODICK",
+      eta: "2026-05-24 09:35:00",
+      receivedAt: "2026-05-24 08:40:00"
+    }), {
+      destinationName: "Brodick",
+      eta: "2026-05-24 09:35:00",
+      originName: "Ardrossan"
+    });
+  });
+
+  it("does not carry a stale ETA while a vessel is at a terminal", () => {
+    currentDb = createTestDatabase();
+    const db = currentDb.db;
+    const terminals = [
+      { organisationId: 1, serviceId: 5, name: "Ardrossan", latitude: 55.640516, longitude: -4.823062 },
+      { organisationId: 1, serviceId: 5, name: "Brodick", latitude: 55.576606, longitude: -5.139172 }
+    ];
+
+    saveVessel(db, vesselPosition({
+      latitude: 55.640516,
+      longitude: -4.823062,
+      lastReceived: "2026-05-24 08:40:00",
+      destinationName: "Brodick",
+      eta: "2026-05-24 08:30:00",
+      originName: "Ardrossan"
+    }));
+
+    assert.deepEqual(enrichVoyage(db, terminals, 1, {
+      mmsi: 123456789,
+      latitude: 55.640516,
+      longitude: -4.823062,
+      receivedAt: "2026-05-24 08:48:08"
+    }), {
+      destinationName: "Brodick",
+      eta: undefined,
+      originName: "Ardrossan"
+    });
+  });
+
+  it("does not use the current terminal as its own destination", () => {
+    currentDb = createTestDatabase();
+    const db = currentDb.db;
+    const terminals = [
+      { organisationId: 1, serviceId: 5, name: "Ardrossan", latitude: 55.640516, longitude: -4.823062 },
+      { organisationId: 1, serviceId: 5, name: "Brodick", latitude: 55.576606, longitude: -5.139172 }
+    ];
+
+    saveVessel(db, vesselPosition({
+      latitude: 55.640516,
+      longitude: -4.823062,
+      lastReceived: "2026-05-24 08:40:00",
+      destinationName: "Ardrossan",
+      originName: "Ardrossan"
+    }));
+
+    assert.deepEqual(enrichVoyage(db, terminals, 1, {
+      mmsi: 123456789,
+      latitude: 55.640516,
+      longitude: -4.823062,
+      destinationName: "ARDROSSAN",
+      receivedAt: "2026-05-24 08:48:08"
+    }), {
+      destinationName: undefined,
+      eta: undefined,
+      originName: "Ardrossan"
+    });
+  });
+
+  it("replaces a carried same-origin destination with the route-derived destination", () => {
+    currentDb = createTestDatabase();
+    const db = currentDb.db;
+    const terminals = [
+      { organisationId: 1, serviceId: 5, name: "Ardrossan", latitude: 55.640516, longitude: -4.823062 },
+      { organisationId: 1, serviceId: 5, name: "Brodick", latitude: 55.576606, longitude: -5.139172 }
+    ];
+
+    saveVessel(db, vesselPosition({
+      latitude: 55.61,
+      longitude: -4.95,
+      lastReceived: "2026-05-24 08:40:00",
+      destinationName: "Ardrossan",
+      originName: "Ardrossan",
+      originDepartedAt: "2026-05-24 08:35:00"
+    }));
+
+    assert.deepEqual(enrichVoyage(db, terminals, 1, {
+      mmsi: 123456789,
+      latitude: 55.60,
+      longitude: -5.0,
+      receivedAt: "2026-05-24 08:48:08"
+    }), {
+      destinationName: "Brodick",
+      eta: undefined,
+      originName: "Ardrossan",
+      originDepartedAt: "2026-05-24 08:35:00"
+    });
+  });
 });
 
 function vesselPosition(overrides: Partial<VesselPosition>): VesselPosition {

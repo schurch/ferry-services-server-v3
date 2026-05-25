@@ -79,7 +79,7 @@ describe("Rail departure API formatting", () => {
 
     assert.equal(requireService(db, 9100).vessels.length, 1);
     assert.equal(requireService(db, 9103).vessels.length, 0);
-    assert.equal(requireService(db, 9100).vessels[0]?.voyage?.eta, "2026-05-14T11:20:00.000Z");
+    assert.equal(requireService(db, 9100).vessels[0]?.voyage?.eta, undefined);
 
     db.prepare("UPDATE vessels SET eta = NULL WHERE mmsi = ?").run(123456789);
 
@@ -137,6 +137,36 @@ describe("Rail departure API formatting", () => {
     assert.equal(requireService(db, 9100).vessels[0]?.voyage, undefined);
   });
 
+  it("does not expose a voyage when origin and destination resolve to the same terminal", () => {
+    freezeNow("2026-05-14T11:00:00.000Z");
+
+    currentDb = createTestDatabase();
+    const db = currentDb.db;
+    seedTimestampContractScenario(db);
+
+    db.prepare(`
+      UPDATE vessels
+      SET destination_name = ?,
+          origin_name = ?,
+          origin_departed_at = ?
+      WHERE mmsi = ?
+    `).run("Gills Bay", "Gills Bay", "2026-05-14 10:40:00", 123456789);
+
+    assert.equal(requireService(db, 9100).vessels[0]?.voyage, undefined);
+  });
+
+  it("keeps a short active voyage visible before the proportional destination radius", () => {
+    freezeNow("2026-05-14T11:00:00.000Z");
+
+    currentDb = createTestDatabase();
+    const db = currentDb.db;
+    seedShortRouteScenario(db);
+
+    const vessel = requireService(db, 9200).vessels[0];
+    assert.equal(vessel?.voyage?.originLocation.name, "Short North");
+    assert.equal(vessel?.voyage?.destinationLocation.name, "Short South");
+  });
+
   it("uses scheduled arrival as vessel ETA when the voyage matches a departure", () => {
     freezeNow("2026-03-16T09:45:00.000Z");
 
@@ -167,7 +197,7 @@ describe("Rail departure API formatting", () => {
     assert.equal(getService(db, 9100, "2026-03-16")?.vessels[0]?.voyage?.eta, "2026-03-16T10:40:00.000Z");
   });
 
-  it("falls back to scheduled arrival when the reported ETA predates the voyage", () => {
+  it("uses scheduled arrival even when the reported ETA predates the voyage", () => {
     freezeNow("2026-03-16T09:45:00.000Z");
 
     currentDb = createTestDatabase();
@@ -198,7 +228,7 @@ describe("Rail departure API formatting", () => {
     assert.equal(getService(db, 9100, "2026-03-16")?.vessels[0]?.voyage?.eta, "2026-03-16T10:40:00.000Z");
   });
 
-  it("keeps a delayed reported ETA within the route duration tolerance", () => {
+  it("uses scheduled arrival even when the reported ETA is delayed", () => {
     freezeNow("2026-03-16T09:45:00.000Z");
 
     currentDb = createTestDatabase();
@@ -226,10 +256,10 @@ describe("Rail departure API formatting", () => {
       123456789
     );
 
-    assert.equal(getService(db, 9100, "2026-03-16")?.vessels[0]?.voyage?.eta, "2026-03-16T11:00:00.000Z");
+    assert.equal(getService(db, 9100, "2026-03-16")?.vessels[0]?.voyage?.eta, "2026-03-16T10:40:00.000Z");
   });
 
-  it("falls back to scheduled arrival when the reported ETA is implausibly late for the route", () => {
+  it("uses scheduled arrival even when the reported ETA is implausibly late", () => {
     freezeNow("2026-03-16T09:45:00.000Z");
 
     currentDb = createTestDatabase();
@@ -303,6 +333,48 @@ function seedRailDepartureScenario(db: Database.Database): void {
     "1",
     3,
     "2026-05-14 10:59:00"
+  );
+}
+
+function seedShortRouteScenario(db: Database.Database): void {
+  db.prepare("INSERT INTO organisations (organisation_id, name) VALUES (999, 'Short Route Test') ON CONFLICT DO NOTHING").run();
+  db.prepare(`
+    INSERT INTO services (service_id, area, route, organisation_id, status, updated)
+    VALUES (?, ?, ?, 999, 0, ?)
+  `).run(9200, "SHORT AREA", "Short North - Short South", "2026-05-14 10:50:00");
+  db.prepare(`
+    INSERT INTO locations (location_id, name, latitude, longitude)
+    VALUES (?, ?, ?, ?), (?, ?, ?, ?)
+  `).run(
+    9201, "Short North", 0, 0,
+    9202, "Short South", 0, 0.018
+  );
+  db.prepare("INSERT INTO service_locations (service_id, location_id) VALUES (?, ?), (?, ?)").run(9200, 9201, 9200, 9202);
+  db.prepare(`
+    INSERT INTO vessels (
+      mmsi,
+      name,
+      latitude,
+      longitude,
+      last_received,
+      updated,
+      organisation_id,
+      destination_name,
+      origin_name,
+      origin_departed_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    223456789,
+    "MV Short Example",
+    0,
+    0.0135,
+    "2026-05-14 10:55:00",
+    "2026-05-14 10:55:00",
+    999,
+    "Short South",
+    "Short North",
+    "2026-05-14 10:45:00"
   );
 }
 
