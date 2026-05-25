@@ -38,8 +38,6 @@ type MarineTrafficVessel = {
 
 type MarineTrafficVoyage = {
   reportedDestination?: unknown;
-  eta?: unknown;
-  etaCalc?: unknown;
 };
 
 type VesselFetchResult = {
@@ -60,7 +58,6 @@ type PositionUpdate = {
   speed?: number;
   course?: number;
   destinationName?: string;
-  eta?: string;
   receivedAt: string;
 };
 
@@ -77,7 +74,6 @@ type PreviousVesselPosition = {
   latitude: number;
   longitude: number;
   destinationName?: string;
-  eta?: string;
   originName?: string;
   originDepartedAt?: string;
 };
@@ -211,15 +207,6 @@ function sqlTimestamp(date = new Date()): string {
   return date.toISOString().replace("T", " ").slice(0, 19);
 }
 
-function unixTimestampToSql(value: unknown): string | undefined {
-  const seconds = parseInteger(value);
-  if (seconds === undefined) {
-    return undefined;
-  }
-
-  return sqlTimestamp(new Date(seconds * 1000));
-}
-
 function capitaliseWords(value: string): string {
   return value.split(/\s+/).filter(Boolean).map((word) => {
     const upper = word.toUpperCase();
@@ -233,40 +220,6 @@ function capitaliseWords(value: string): string {
 function cleanVesselText(value: string): string | undefined {
   const cleaned = value.replace(/@/g, " ").trim().replace(/\s+/g, " ");
   return cleaned === "" ? undefined : cleaned;
-}
-
-function parseAisEta(value: unknown, now = new Date()): string | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-
-  const eta = value as Record<string, unknown>;
-  const month = parseInteger(eta.Month);
-  const day = parseInteger(eta.Day);
-  const hour = parseInteger(eta.Hour);
-  const minute = parseInteger(eta.Minute);
-  if (
-    month === undefined ||
-    day === undefined ||
-    hour === undefined ||
-    minute === undefined ||
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > 31 ||
-    hour > 23 ||
-    minute > 59
-  ) {
-    return undefined;
-  }
-
-  const currentYear = now.getUTCFullYear();
-  const candidates = [currentYear - 1, currentYear, currentYear + 1]
-    .map((year) => new Date(Date.UTC(year, month - 1, day, hour, minute)));
-  const best = candidates.reduce((nearest, candidate) => (
-    Math.abs(candidate.getTime() - now.getTime()) < Math.abs(nearest.getTime() - now.getTime()) ? candidate : nearest
-  ));
-  return sqlTimestamp(best);
 }
 
 function trackedVesselMap(): Map<number, OrganisationId> {
@@ -311,7 +264,6 @@ function parseAisPositionUpdate(message: AisStreamMessage): PositionUpdate | nul
     speed: parseNumber(body.Sog ?? body.SOG ?? metadata.Sog ?? metadata.SOG),
     course: parseNumber(body.Cog ?? body.COG ?? metadata.Cog ?? metadata.COG),
     destinationName: destination ? cleanVesselText(destination) : undefined,
-    eta: parseAisEta(body.Eta),
     receivedAt: sqlTimestamp()
   };
 }
@@ -365,7 +317,7 @@ function loadVesselNames(db: Database.Database): Map<number, string> {
 
 function previousVesselPosition(db: Database.Database, mmsi: number): PreviousVesselPosition | undefined {
   const row = db.prepare(`
-    SELECT name, latitude, longitude, destination_name, eta, origin_name, origin_departed_at
+    SELECT name, latitude, longitude, destination_name, origin_name, origin_departed_at
     FROM vessels
     WHERE mmsi = ?
   `).get(mmsi) as {
@@ -373,7 +325,6 @@ function previousVesselPosition(db: Database.Database, mmsi: number): PreviousVe
     latitude: number;
     longitude: number;
     destination_name: string | null;
-    eta: string | null;
     origin_name: string | null;
     origin_departed_at: string | null;
   } | undefined;
@@ -384,7 +335,6 @@ function previousVesselPosition(db: Database.Database, mmsi: number): PreviousVe
         latitude: row.latitude,
         longitude: row.longitude,
         destinationName: row.destination_name ?? undefined,
-        eta: row.eta ?? undefined,
         originName: row.origin_name ?? undefined,
         originDepartedAt: row.origin_departed_at ?? undefined
       }
@@ -580,7 +530,7 @@ export function enrichVoyage(
   if (currentTerminal) {
     return {
       destinationName: destinationAtTerminal(terminals, organisationId, currentTerminal, position, previous?.destinationName),
-      eta: etaAtTerminal(position.eta, previous?.eta, position.receivedAt),
+      eta: undefined,
       originName: currentTerminal.name
     };
   }
@@ -589,7 +539,7 @@ export function enrichVoyage(
     const originDepartedAt = position.receivedAt;
     return {
       destinationName: destinationForPosition(terminals, organisationId, position, previousTerminal, undefined),
-      eta: etaForNewDeparture(position.eta, previous?.eta, originDepartedAt),
+      eta: undefined,
       originName: previousTerminal.name,
       originDepartedAt
     };
@@ -599,23 +549,13 @@ export function enrichVoyage(
     const origin = originFromName(terminals, organisationId, previous.originName);
     return {
       destinationName: destinationForPosition(terminals, organisationId, position, origin, previous.destinationName),
-      eta: position.eta ?? previous.eta,
+      eta: undefined,
       originName: previous.originName,
       originDepartedAt: previous.originDepartedAt
     };
   }
 
   return {};
-}
-
-function etaAtTerminal(positionEta: string | undefined, previousEta: string | undefined, receivedAt: string): string | undefined {
-  const eta = positionEta ?? previousEta;
-  return eta && new Date(eta).getTime() >= new Date(receivedAt).getTime() ? eta : undefined;
-}
-
-function etaForNewDeparture(positionEta: string | undefined, previousEta: string | undefined, originDepartedAt: string): string | undefined {
-  const eta = positionEta ?? previousEta;
-  return eta && new Date(eta).getTime() >= new Date(originDepartedAt).getTime() ? eta : undefined;
 }
 
 function vesselPosition(
@@ -858,7 +798,7 @@ async function fetchMarineTrafficVoyageData(
   client: MarineTrafficClient,
   headers: MarineTrafficHeaders,
   shipId: number | undefined
-): Promise<Pick<PositionUpdate, "destinationName" | "eta">> {
+): Promise<Pick<PositionUpdate, "destinationName">> {
   if (shipId === undefined) {
     return {};
   }
@@ -877,8 +817,7 @@ async function fetchMarineTrafficVoyageData(
     const voyage = JSON.parse(body) as MarineTrafficVoyage;
     const rawDestination = parseText(voyage.reportedDestination);
     return {
-      destinationName: rawDestination ? cleanVesselText(rawDestination) : undefined,
-      eta: unixTimestampToSql(voyage.eta ?? voyage.etaCalc)
+      destinationName: rawDestination ? cleanVesselText(rawDestination) : undefined
     };
   } catch (error) {
     logger.warn({ err: error, shipId }, "Skipping voyage enrichment because MarineTraffic fetch failed");

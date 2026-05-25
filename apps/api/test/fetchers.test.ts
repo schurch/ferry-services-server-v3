@@ -88,7 +88,7 @@ describe("vessel persistence", () => {
     });
   });
 
-  it("keeps a valid ETA when a newly detected voyage has one", () => {
+  it("uses reported destination but ignores reported ETA for a newly detected voyage", () => {
     currentDb = createTestDatabase();
     const db = currentDb.db;
     const terminals = [
@@ -110,11 +110,10 @@ describe("vessel persistence", () => {
       latitude: 55.61,
       longitude: -4.95,
       destinationName: "Brodick",
-      eta: "2026-05-24 09:35:00",
       receivedAt: "2026-05-24 08:48:08"
     }), {
       destinationName: "Brodick",
-      eta: "2026-05-24 09:35:00",
+      eta: undefined,
       originName: "Ardrossan",
       originDepartedAt: "2026-05-24 08:48:08"
     });
@@ -195,11 +194,10 @@ describe("vessel persistence", () => {
       latitude: 55.640516,
       longitude: -4.823062,
       destinationName: "BRODICK",
-      eta: "2026-05-24 09:35:00",
       receivedAt: "2026-05-24 08:40:00"
     }), {
       destinationName: "Brodick",
-      eta: "2026-05-24 09:35:00",
+      eta: undefined,
       originName: "Ardrossan"
     });
   });
