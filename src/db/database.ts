@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { config } from "../config.js";
 
+// #region Public API
+
 export function openDatabase(databasePath = config.databasePath): Database.Database {
   if (databasePath !== ":memory:") {
     const parentDir = path.dirname(databasePath);
@@ -17,3 +19,5 @@ export function openDatabase(databasePath = config.databasePath): Database.Datab
   db.pragma("busy_timeout = 5000");
   return db;
 }
+
+// #endregion

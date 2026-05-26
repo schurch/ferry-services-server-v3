@@ -2,9 +2,15 @@ import type Database from "better-sqlite3";
 import type { Location, RailDeparture, ScrapedService, VesselPosition, WeatherObservation } from "../types/fetchers.js";
 import type { ServiceStatus } from "../types/api.js";
 
+// #region Helpers
+
 function nowSql(): string {
   return new Date().toISOString().replace("T", " ").slice(0, 19);
 }
+
+// #endregion
+
+// #region Public API
 
 export function listLocations(db: Database.Database): Location[] {
   return db.prepare(`
@@ -337,3 +343,5 @@ export function hideServices(db: Database.Database, serviceIds: number[]): void 
   });
   transaction(serviceIds);
 }
+
+// #endregion

@@ -3,6 +3,8 @@ import { openDatabase } from "../db/database.js";
 import { generateAndWriteOfflineSnapshot } from "../offline/snapshot.js";
 import { logger } from "../logger.js";
 
+// #region Entrypoint
+
 const db = openDatabase();
 
 try {
@@ -11,3 +13,5 @@ try {
 } finally {
   db.close();
 }
+
+// #endregion

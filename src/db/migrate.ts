@@ -4,10 +4,16 @@ import { fileURLToPath } from "node:url";
 import { openDatabase } from "./database.js";
 import { logger } from "../logger.js";
 
+// #region Constants
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const migrationsDir = path.resolve(__dirname, "../../sqlite/migrations");
 const seedPath = path.resolve(__dirname, "../../sqlite/seed.sql");
+
+// #endregion
+
+// #region Entrypoint
 
 const db = openDatabase();
 db.pragma("journal_mode = WAL");
@@ -56,3 +62,5 @@ if (referenceData.count === 0) {
 }
 
 db.close();
+
+// #endregion

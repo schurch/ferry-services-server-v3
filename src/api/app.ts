@@ -58,6 +58,8 @@ import {
   renderServicesPage
 } from "../web/pages.js";
 
+// #region Route schemas and types
+
 const publicDir = path.resolve("public");
 const INSTALLATION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -96,6 +98,10 @@ type BuildAppOptions = {
   db?: ReturnType<typeof openDatabase>;
   now?: () => Date;
 };
+
+// #endregion
+
+// #region Route helpers
 
 function describedResponse<T extends Record<string, unknown>>(description: string, schema: T): T & { description: string } {
   return {
@@ -177,6 +183,10 @@ function addSchemas(app: FastifyInstance): void {
   }
 }
 
+// #endregion
+
+// #region App setup
+
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const app = Fastify({
     logger: config.nodeEnv === "test" ? false : loggerOptions(),
@@ -214,6 +224,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   addSchemas(app);
   runInstallationMaintenance();
+
+  // #region Plugins and static assets
 
   await app.register(swagger, {
     openapi: {
@@ -254,6 +266,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     index: false,
     wildcard: true
   });
+
+  // #endregion
+
+  // #region Public web routes
 
   app.get("/openapi.json", {
     schema: {
@@ -337,6 +353,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
   }, async (_request, reply) => reply.type("text/html").send(renderPrivacyPolicyPage()));
 
+  // #endregion
+
+  // #region Service API routes
+
   app.get("/api/services", {
     schema: {
       operationId: "listServices",
@@ -384,6 +404,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       ? serviceToApi(service)
       : reply.code(404).send({ error: "Not Found", message: "Service not found" });
   });
+
+  // #endregion
+
+  // #region Installation API routes
 
   app.post("/api/installations/:installationID", {
     preHandler: [
@@ -605,6 +629,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return savedServicesForInstallation(installationId);
   });
 
+  // #endregion
+
+  // #region Timetable and offline API routes
+
   app.get("/api/timetable-documents", {
     schema: {
       operationId: "listTimetableDocuments",
@@ -696,6 +724,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return reply.type("application/vnd.sqlite3").send(fs.createReadStream(defaultSnapshotPath));
   });
 
+  // #endregion
+
   if (sentryEnabled) {
     Sentry.setupFastifyErrorHandler(app, {
       shouldHandleError: (_error, _request, reply) => reply.statusCode >= 500
@@ -711,7 +741,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   return app;
 }
 
+// #endregion
+
+// #region Server entry point
+
 export async function startServer(): Promise<void> {
   const app = await buildApp();
   await app.listen({ host: config.host, port: config.port });
 }
+
+// #endregion

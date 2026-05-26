@@ -2,6 +2,8 @@ import pino from "pino";
 import type { LoggerOptions } from "pino";
 import { config } from "./config.js";
 
+// #region Types
+
 export type ServiceName =
   | "server"
   | "migrate"
@@ -12,6 +14,10 @@ export type ServiceName =
   | "timetable-document-fetcher"
   | "transxchange-ingester"
   | "offline-snapshot-generator";
+
+// #endregion
+
+// #region Public API
 
 export function serviceFromEntrypoint(entrypoint: string | undefined): ServiceName {
   if (!entrypoint) return "server";
@@ -50,3 +56,5 @@ export function loggerOptions(): LoggerOptions {
 }
 
 export const logger = pino(loggerOptions());
+
+// #endregion

@@ -1,10 +1,16 @@
 import type Database from "better-sqlite3";
 import type { ScrapedTimetableDocument } from "../types/fetchers.js";
 
+// #region Row types
+
 type ExistingDocumentRow = {
   timetable_document_id: number;
   source_url: string;
 };
+
+// #endregion
+
+// #region Public API
 
 export function saveTimetableDocuments(db: Database.Database, documents: ScrapedTimetableDocument[]): void {
   const upsertDocument = db.prepare(`
@@ -80,3 +86,5 @@ export function saveTimetableDocuments(db: Database.Database, documents: Scraped
 
   transaction(documents);
 }
+
+// #endregion

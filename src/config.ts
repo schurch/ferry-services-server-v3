@@ -3,10 +3,16 @@ import path from "node:path";
 import { Type, type Static } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 
+// #region Environment loading
+
 loadDotenv({
   path: path.resolve(process.cwd(), ".env"),
   quiet: true
 });
+
+// #endregion
+
+// #region Schema and types
 
 const envSchema = Type.Object({
   NODE_ENV: Type.Optional(Type.Union([Type.Literal("development"), Type.Literal("test"), Type.Literal("production")])),
@@ -40,6 +46,10 @@ const envSchema = Type.Object({
 });
 
 type Env = Static<typeof envSchema>;
+
+// #endregion
+
+// #region Parsers
 
 function parseOptionalInteger(value: string | undefined): number | undefined {
   if (value === undefined || value.trim() === "") {
@@ -84,6 +94,10 @@ function parseOptionalNumber(value: string | undefined): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+// #endregion
+
+// #region Parsed environment
+
 const env = Value.Parse(envSchema, {
   NODE_ENV: process.env.NODE_ENV,
   HOST: process.env.HOST,
@@ -114,6 +128,10 @@ const env = Value.Parse(envSchema, {
   FCM_PROJECT_ID: process.env.FCM_PROJECT_ID,
   GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS
 }) satisfies Env;
+
+// #endregion
+
+// #region Public API
 
 export const config = {
   nodeEnv: env.NODE_ENV ?? "development",
@@ -154,3 +172,5 @@ export const config = {
     googleApplicationCredentials: env.GOOGLE_APPLICATION_CREDENTIALS ?? null
   }
 } as const;
+
+// #endregion

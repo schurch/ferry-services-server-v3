@@ -1,5 +1,7 @@
 import type { ServiceStatus } from "../types/api.js";
 
+// #region Types
+
 export type PushService = {
   serviceId: number;
   area: string;
@@ -29,6 +31,10 @@ export type GooglePushPayload = {
     priority: "HIGH";
   };
 };
+
+// #endregion
+
+// #region Public API
 
 export function shouldNotifyForServiceStatusChange(newService: PushService, oldService: PushService | null): boolean {
   return oldService !== null && newService.status !== oldService.status && newService.status !== -99;
@@ -79,3 +85,5 @@ export function googlePushPayload(service: PushService): GooglePushPayload {
     }
   };
 }
+
+// #endregion

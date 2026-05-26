@@ -6,6 +6,8 @@ import { replaceRailDepartures } from "../db/fetchers.js";
 import { logger } from "../logger.js";
 import type { RailDeparture } from "../types/fetchers.js";
 
+// #region Types
+
 type RailLocation = {
   locationName?: unknown;
   crs?: unknown;
@@ -31,6 +33,10 @@ type RailStation = {
   locationId: number;
 };
 
+// #endregion
+
+// #region Constants
+
 const railStations: RailStation[] = [
   { crs: "ADS", locationId: 3 },
   { crs: "LAR", locationId: 11 },
@@ -42,6 +48,10 @@ const railStations: RailStation[] = [
   { crs: "ABD", locationId: 61 },
   { crs: "TRN", locationId: 97 }
 ];
+
+// #endregion
+
+// #region Parsing
 
 function isRailLocation(value: unknown): value is { locationName: string; crs: string } {
   const location = value as RailLocation;
@@ -117,6 +127,10 @@ function railDepartures(value: RailDepartureBoard, locationId: number): RailDepa
     .filter((departure): departure is RailDeparture => departure !== null);
 }
 
+// #endregion
+
+// #region Fetching
+
 async function fetchRailDepartures(apiKey: string, station: RailStation): Promise<RailDeparture[] | null> {
   const url = new URL(`https://api1.raildata.org.uk/1010-live-departure-board-dep/LDBWS/api/20220120/GetDepBoardWithDetails/${station.crs}`);
   logger.info({ crs: station.crs, locationId: station.locationId }, "Fetching rail departures");
@@ -147,6 +161,10 @@ async function fetchRailDepartures(apiKey: string, station: RailStation): Promis
   }
 }
 
+// #endregion
+
+// #region Entrypoint
+
 async function main(): Promise<void> {
   if (!config.railDataApiKey) {
     logger.warn("RAIL_DATA_API_KEY is not set; skipping rail departure fetch");
@@ -168,3 +186,5 @@ async function main(): Promise<void> {
 }
 
 await main();
+
+// #endregion

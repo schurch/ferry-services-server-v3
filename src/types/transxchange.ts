@@ -1,3 +1,5 @@
+// #region TransXChange domain types
+
 export type TransxchangeDateRange = {
   startDate: string;
   endDate: string;
@@ -87,3 +89,5 @@ export type TransxchangeDocument = {
   journeyPatternTimingLinks: TransxchangeJourneyPatternTimingLink[];
   vehicleJourneys: TransxchangeVehicleJourney[];
 };
+
+// #endregion

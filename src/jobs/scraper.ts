@@ -16,6 +16,8 @@ import { logger } from "../logger.js";
 import type { ScrapedService } from "../types/fetchers.js";
 import type { ServiceStatus } from "../types/api.js";
 
+// #region Types
+
 type OperatorScraper = {
   name: string;
   organisationId: number;
@@ -50,6 +52,10 @@ type CalMacResponse = {
     routes?: CalMacRoute[];
   };
 };
+
+// #endregion
+
+// #region Constants
 
 const SERVICE_STATUS = {
   normal: 0,
@@ -90,6 +96,10 @@ const calMacServiceIds = new Map<string, number>([
   ["011", 39],
   ["301", 41]
 ]);
+
+// #endregion
+
+// #region Shared helpers
 
 function nowSql(): string {
   return new Date().toISOString().replace("T", " ").slice(0, 19);
@@ -156,6 +166,10 @@ function service(input: Omit<ScrapedService, "updated">): ScrapedService {
     updated: nowSql()
   };
 }
+
+// #endregion
+
+// #region Operator scrapers
 
 async function scrapeCorran(): Promise<ScrapedService[]> {
   return [
@@ -318,6 +332,10 @@ async function scrapeOrkney(): Promise<ScrapedService[]> {
   ];
 }
 
+// #endregion
+
+// #region CalMac scraper
+
 function calMacStatus(status: string): ServiceStatus {
   if (status === "NORMAL") return SERVICE_STATUS.normal;
   if (status === "BE_AWARE" || status === "DISRUPTIONS") return SERVICE_STATUS.disrupted;
@@ -406,6 +424,10 @@ async function scrapeCalMac(): Promise<ScrapedService[]> {
   }));
 }
 
+// #endregion
+
+// #region Entrypoint
+
 async function main(): Promise<void> {
   const db = openDatabase();
   const scrapers: OperatorScraper[] = [
@@ -459,3 +481,5 @@ async function main(): Promise<void> {
 }
 
 await main();
+
+// #endregion

@@ -6,6 +6,8 @@ import { openDatabase } from "../db/database.js";
 import { logger } from "../logger.js";
 import type { Location, WeatherObservation } from "../types/fetchers.js";
 
+// #region Types
+
 type OpenWeatherResponse = {
   weather?: Array<{
     icon?: unknown;
@@ -19,6 +21,10 @@ type OpenWeatherResponse = {
     deg?: unknown;
   };
 };
+
+// #endregion
+
+// #region Fetching
 
 function weatherObservation(value: OpenWeatherResponse): WeatherObservation | null {
   const weather = value.weather?.[0];
@@ -71,6 +77,10 @@ async function fetchWeatherForLocation(appId: string, location: Location): Promi
   }
 }
 
+// #endregion
+
+// #region Entrypoint
+
 async function main(): Promise<void> {
   if (!config.openWeatherMapAppId) {
     logger.warn("OPENWEATHERMAP_APPID is not set; skipping weather fetch");
@@ -92,3 +102,5 @@ async function main(): Promise<void> {
 }
 
 await main();
+
+// #endregion

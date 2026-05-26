@@ -10,6 +10,8 @@ import { sendFcmMessage } from "./fcm.js";
 import { applePushPayload, googlePushPayload, shouldNotifyForServiceStatusChange, type PushService } from "./payload.js";
 import { logger } from "../logger.js";
 
+// #region Public API
+
 export async function notifyForServiceStatusChanges(
   db: Database.Database,
   newServices: PushService[],
@@ -28,6 +30,10 @@ export async function notifyForServiceStatusChanges(
     await notifyForService(db, service);
   }
 }
+
+// #endregion
+
+// #region Helpers
 
 async function notifyForService(db: Database.Database, service: PushService): Promise<void> {
   const installations = listPushInstallationsForService(db, service.serviceId);
@@ -75,3 +81,5 @@ async function notifyForService(db: Database.Database, service: PushService): Pr
     "Push notification batch complete"
   );
 }
+
+// #endregion

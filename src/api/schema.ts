@@ -1,5 +1,7 @@
 import { Type, type Static } from "@sinclair/typebox";
 
+// #region Schemas
+
 export const UTCTimeSchema = Type.Unsafe<string>({
   $id: "UTCTime",
   type: "string",
@@ -206,6 +208,10 @@ export const ServiceListResponseSchema = Type.Object({
 
 export const SnapshotBodySchema = Type.String({ format: "binary", $id: "SnapshotBody" });
 
+// #endregion
+
+// #region Derived types
+
 export type OrganisationApiResponse = Static<typeof OrganisationResponseSchema>;
 export type LocationWeatherApiResponse = Static<typeof LocationWeatherResponseSchema>;
 export type RailDepartureApiResponse = Static<typeof RailDepartureResponseSchema>;
@@ -219,3 +225,5 @@ export type ReliabilityPeriodApiResponse = Static<typeof ReliabilityPeriodRespon
 export type ReliabilityApiResponse = Static<typeof ReliabilityResponseSchema>;
 export type ServiceApiResponse = Static<typeof ServiceResponseSchema>;
 export type ServiceListApiResponse = Static<typeof ServiceListResponseSchema>;
+
+// #endregion

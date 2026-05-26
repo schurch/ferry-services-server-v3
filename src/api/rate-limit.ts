@@ -1,3 +1,5 @@
+// #region Types
+
 type WindowState = {
   count: number;
   resetAt: number;
@@ -9,6 +11,10 @@ export type RateLimitResult = {
   remaining: number;
   resetAt: number;
 };
+
+// #endregion
+
+// #region Public API
 
 export class MemoryRateLimiter {
   private readonly windows = new Map<string, WindowState>();
@@ -43,3 +49,5 @@ export class MemoryRateLimiter {
     }
   }
 }
+
+// #endregion

@@ -10,6 +10,8 @@ import { saveVessel } from "../db/fetchers.js";
 import { logger } from "../logger.js";
 import type { VesselPosition } from "../types/fetchers.js";
 
+// #region Types
+
 type OrganisationId = number;
 type Mmsi = number;
 
@@ -77,6 +79,10 @@ type PreviousVesselPosition = {
   originName?: string | undefined;
   originDepartedAt?: string | undefined;
 };
+
+// #endregion
+
+// #region Constants
 
 const initCycleTLS = cycleTLS.default as unknown as () => Promise<CycleTLSClient>;
 const aisStreamUrl = "wss://stream.aisstream.io/v0/stream";
@@ -180,6 +186,10 @@ const trackedVessels: OrganisationVessels[] = [
     mmsis: [235001223, 235002334]
   }
 ];
+
+// #endregion
+
+// #region Parsing helpers
 
 function parseNumber(value: unknown): number | undefined {
   if (value === null || value === undefined || value === "") {
@@ -292,6 +302,10 @@ async function eventDataText(data: unknown): Promise<string> {
   return String(data);
 }
 
+// #endregion
+
+// #region Database lookups
+
 function loadTerminals(db: Database.Database): TerminalReference[] {
   return db.prepare(`
     SELECT DISTINCT
@@ -340,6 +354,10 @@ function previousVesselPosition(db: Database.Database, mmsi: number): PreviousVe
       }
     : undefined;
 }
+
+// #endregion
+
+// #region Voyage enrichment
 
 function distanceKm(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }): number {
   const earthRadiusKm = 6371;
@@ -558,6 +576,10 @@ export function enrichVoyage(
   return {};
 }
 
+// #endregion
+
+// #region AIS Stream
+
 function vesselPosition(
   db: Database.Database,
   terminals: TerminalReference[],
@@ -684,6 +706,10 @@ async function runAisStreamLoop(
     reconnectDelayMs = Math.min(reconnectDelayMs * 2, 60_000);
   }
 }
+
+// #endregion
+
+// #region MarineTraffic
 
 function marineTrafficHeaders(): MarineTrafficHeaders {
   return {
@@ -874,6 +900,10 @@ async function runMarineTrafficPollLoop(
   }
 }
 
+// #endregion
+
+// #region Entrypoint
+
 async function main(): Promise<void> {
   const client = await initCycleTLS();
   let db: Database.Database | undefined;
@@ -903,3 +933,5 @@ async function main(): Promise<void> {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await main();
 }
+
+// #endregion

@@ -1,6 +1,8 @@
 import type Database from "better-sqlite3";
 import type { TransxchangeDocument } from "../types/transxchange.js";
 
+// #region Public API
+
 export function replaceTransxchangeData(db: Database.Database, documents: TransxchangeDocument[]): void {
   const insertDocument = db.prepare(`
     INSERT INTO transxchange_documents (
@@ -195,3 +197,5 @@ export function replaceTransxchangeData(db: Database.Database, documents: Transx
 
   transaction(documents);
 }
+
+// #endregion

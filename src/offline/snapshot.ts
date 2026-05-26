@@ -6,8 +6,14 @@ import type SourceDatabase from "better-sqlite3";
 import { londonLocalTimestampResponse, listLocationDepartureRows, listServicesWithScheduledDepartures } from "../db/api.js";
 import { logger } from "../logger.js";
 
+// #region Constants
+
 export const defaultSnapshotPath = "offline/snapshot.sqlite3";
 export const defaultSnapshotMetadataPath = "offline/snapshot.meta.json";
+
+// #endregion
+
+// #region Row and snapshot types
 
 type ServiceRow = {
   service_id: number;
@@ -71,6 +77,10 @@ type OfflineSnapshot = {
   departures: OfflineDeparture[];
 };
 
+// #endregion
+
+// #region Formatting helpers
+
 function dateString(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -100,6 +110,10 @@ function quotedEtag(value: string): string {
 function utcSeconds(timestamp: string): string {
   return timestamp.replace(/\.\d{3}Z$/, "Z");
 }
+
+// #endregion
+
+// #region Source readers
 
 function readServices(db: SourceDatabase.Database): ServiceRow[] {
   return db.prepare(`
@@ -189,6 +203,10 @@ function readDepartures(db: SourceDatabase.Database, services: ServiceRow[], val
   return departures;
 }
 
+// #endregion
+
+// #region Snapshot assembly
+
 function createSnapshot(db: SourceDatabase.Database, now = new Date()): OfflineSnapshot {
   const generatedAt = now.toISOString();
   const validFrom = dateString(now);
@@ -226,6 +244,10 @@ function createSnapshot(db: SourceDatabase.Database, now = new Date()): OfflineS
   const dataVersion = hashJson({ ...snapshotWithoutVersion, dataVersion: "", generatedAt: `${validFrom}T00:00:00.000Z` });
   return { ...snapshotWithoutVersion, dataVersion };
 }
+
+// #endregion
+
+// #region SQLite artifact writing
 
 function removeIfExists(filePath: string): void {
   if (fs.existsSync(filePath)) {
@@ -395,6 +417,10 @@ function writeSnapshotDatabase(snapshotPath: string, snapshot: OfflineSnapshot):
   fs.renameSync(tempPath, snapshotPath);
 }
 
+// #endregion
+
+// #region Public API
+
 export function readOfflineSnapshotMetadata(metadataPath = defaultSnapshotMetadataPath): OfflineSnapshotMetadata | null {
   if (!fs.existsSync(metadataPath)) {
     return null;
@@ -429,3 +455,5 @@ export function generateAndWriteOfflineSnapshot(
   logger.info({ dataVersion: snapshot.dataVersion }, "Offline snapshot artifact updated");
   return metadata;
 }
+
+// #endregion

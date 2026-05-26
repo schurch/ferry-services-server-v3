@@ -1,6 +1,8 @@
 import { GoogleAuth } from "google-auth-library";
 import { config } from "../config.js";
 
+// #region Types
+
 export type FcmPayload = {
   data: {
     service_id: string;
@@ -14,9 +16,17 @@ export type FcmPayload = {
 
 export type FcmResult = "success" | "invalid-token" | "skipped";
 
+// #endregion
+
+// #region Constants
+
 const auth = new GoogleAuth({
   scopes: ["https://www.googleapis.com/auth/firebase.messaging"]
 });
+
+// #endregion
+
+// #region Helpers
 
 function invalidTokenResponse(status: number, body: string): boolean {
   if (status === 404 || body.includes("UNREGISTERED") || body.includes("registration-token-not-registered")) {
@@ -30,6 +40,10 @@ function invalidTokenResponse(status: number, body: string): boolean {
     return false;
   }
 }
+
+// #endregion
+
+// #region Public API
 
 export async function sendFcmMessage(deviceToken: string, payload: FcmPayload): Promise<FcmResult> {
   if (!config.fcm.projectId || !config.fcm.googleApplicationCredentials) {
@@ -69,3 +83,5 @@ export async function sendFcmMessage(deviceToken: string, payload: FcmPayload): 
 
   throw new Error(`FCM returned HTTP ${response.status}: ${body.slice(0, 500)}`);
 }
+
+// #endregion

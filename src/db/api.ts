@@ -17,6 +17,8 @@ import type {
   VesselResponse
 } from "../types/api.js";
 
+// #region Row types
+
 type Nullable<T> = T | null;
 
 type ServiceRow = {
@@ -126,6 +128,10 @@ export type LocationDepartureRow = {
   notes: Nullable<string>;
 };
 
+// #endregion
+
+// #region Time and scalar formatting
+
 function value<T>(input: Nullable<T>): T | undefined {
   return input ?? undefined;
 }
@@ -170,6 +176,10 @@ function cardinalDirection(degrees: number): string {
   const cardinals = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
   return cardinals[Math.floor((degrees + 11.25) / 22.5) % cardinals.length] ?? "N";
 }
+
+// #endregion
+
+// #region Response builders
 
 function weatherResponse(row: WeatherRow): LocationWeatherResponse {
   return {
@@ -232,6 +242,10 @@ function organisationResponse(row: OrganisationRow): OrganisationResponse {
     ...(row.facebook !== null ? { facebook: row.facebook } : {})
   };
 }
+
+// #endregion
+
+// #region Vessel matching
 
 function vesselResponse(row: VesselRow, serviceLocations?: LocationResponse[], now = new Date()): VesselResponse {
   const voyage = serviceLocations ? vesselVoyageResponse(row, serviceLocations, now) : undefined;
@@ -465,6 +479,10 @@ function isRecent(timestamp: string, now = new Date()): boolean {
   return now.getTime() - parseSqlTimestamp(timestamp).getTime() < 30 * 60 * 1000;
 }
 
+// #endregion
+
+// #region Calendar and timetable rules
+
 export function londonLocalTimestampResponse(timestamp: string): string {
   const localUtcGuess = new Date(`${timestamp.replace(" ", "T")}Z`);
   const formatter = new Intl.DateTimeFormat("en-GB", {
@@ -636,6 +654,10 @@ function matchedBankHolidayRulesForDate(queryDate: string): string[] {
   ])];
 }
 
+// #endregion
+
+// #region Reliability helpers
+
 function padTo<T>(size: number, filler: T, values: T[]): T[] {
   return [...values, ...Array(size).fill(filler)].slice(0, size);
 }
@@ -672,6 +694,10 @@ function roundedPercentage(count: number, total: number): number {
 
   return Math.round(((count / total) * 100) * 10) / 10;
 }
+
+// #endregion
+
+// #region Lookup builders
 
 function createLocationLookup(
   db: Database.Database,
@@ -925,6 +951,10 @@ function createServiceTimetableDocumentLookup(db: Database.Database, serviceId: 
   const documents = createTimetableDocumentResponses(db, serviceId);
   return documents.length > 0 ? new Map([[serviceId, documents]]) : new Map();
 }
+
+// #endregion
+
+// #region Departure queries
 
 function departureQueryParams(queryDate: string, serviceId: number): Array<string | number> {
   const weekOfMonthRules = matchedWeekOfMonthRulesForDate(queryDate);
@@ -1325,6 +1355,10 @@ export function listLocationDepartureRows(db: Database.Database, serviceId: numb
   return rows;
 }
 
+// #endregion
+
+// #region Reliability queries
+
 function worstStatusByDate(
   db: Database.Database,
   serviceId: number,
@@ -1432,6 +1466,10 @@ function createServiceReliability(db: Database.Database, serviceId: number, now:
     }
   };
 }
+
+// #endregion
+
+// #region Public API
 
 function departureResponseFromRow(row: LocationDepartureRow): DepartureResponse {
   return {
@@ -1690,3 +1728,5 @@ export function listTimetableDocuments(db: Database.Database, serviceId?: number
 export function etagForJson(value: unknown): string {
   return `"sha256-${crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex")}"`;
 }
+
+// #endregion

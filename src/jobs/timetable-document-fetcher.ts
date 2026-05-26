@@ -7,6 +7,8 @@ import { saveTimetableDocuments } from "../db/timetable-documents.js";
 import { logger } from "../logger.js";
 import type { ScrapedTimetableDocument } from "../types/fetchers.js";
 
+// #region Types
+
 type TimetableDocumentSource = {
   organisationId: number;
   serviceIds: number[];
@@ -46,6 +48,10 @@ export type TimetableDocumentCandidate = {
   title: string;
   url: string;
 };
+
+// #endregion
+
+// #region Constants
 
 const requestTimeoutMs = 30_000;
 
@@ -97,6 +103,10 @@ const calMacServiceIds = new Map<string, number[]>([
   ["ullapool - stornoway", [25]],
   ["mallaig / oban - lochboisdale", [37]]
 ]);
+
+// #endregion
+
+// #region Formatting and filtering helpers
 
 function nowSql(): string {
   return new Date().toISOString().replace("T", " ").slice(0, 19);
@@ -240,6 +250,10 @@ export function orkneyServiceIdsForDocument(document: TimetableDocumentCandidate
   return [];
 }
 
+// #endregion
+
+// #region Fetching
+
 async function fetchText(url: string): Promise<string> {
   const response = await fetch(url, {
     headers: {
@@ -344,6 +358,10 @@ function filterTimetableLinks(links: DocumentLink[]): DocumentLink[] {
     return true;
   });
 }
+
+// #endregion
+
+// #region Source scrapers
 
 function calMacTimetableTitle(timetable: CalMacTimetable): string {
   const routeName = typeof timetable.route?.name === "string" ? timetable.route.name : "CalMac timetable";
@@ -492,6 +510,10 @@ async function scrapeTimetableDocuments(): Promise<ScrapedTimetableDocument[]> {
   return unique;
 }
 
+// #endregion
+
+// #region Entrypoint
+
 async function main(): Promise<void> {
   const db = openDatabase();
   try {
@@ -506,3 +528,5 @@ async function main(): Promise<void> {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await main();
 }
+
+// #endregion

@@ -23,6 +23,8 @@ import type {
   TransxchangeVehicleJourney
 } from "../types/transxchange.js";
 
+// #region Types
+
 type RawVehicleJourney = {
   vehicleJourneyCode: string;
   vehicleJourneyRef?: string | undefined;
@@ -55,13 +57,21 @@ type FtpConfig = {
   password: string;
 };
 
-const ingestWorkingDirectory = path.resolve("data/transxchange-ingest");
-const execFileAsync = promisify(execFile);
-
 type PreparedIngestDirectory = {
   directory: string;
   cleanupWorkingDirectory: boolean;
 };
+
+// #endregion
+
+// #region Constants
+
+const ingestWorkingDirectory = path.resolve("data/transxchange-ingest");
+const execFileAsync = promisify(execFile);
+
+// #endregion
+
+// #region XML parsing helpers
 
 function shouldCleanupWorkingDirectory(input = process.argv[2]): boolean {
   return !input || path.extname(input).toLowerCase() === ".zip";
@@ -453,6 +463,10 @@ function parseDocument(filePath: string): TransxchangeDocument | null {
   return document;
 }
 
+// #endregion
+
+// #region File preparation
+
 function findXmlFiles(directory: string): string[] {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const entryPath = path.join(directory, entry.name);
@@ -541,6 +555,10 @@ async function prepareIngestDirectory(): Promise<PreparedIngestDirectory> {
   return { directory: extractDirectory, cleanupWorkingDirectory: true };
 }
 
+// #endregion
+
+// #region Public API
+
 export function parseTransxchangeDirectory(directory: string): TransxchangeDocument[] {
   const files = findXmlFiles(directory);
   logger.info({ fileCount: files.length }, "TransXChange files discovered");
@@ -564,6 +582,10 @@ export function ingestTransxchangeDirectory(db: Database.Database, directory: st
   replaceTransxchangeData(db, documents);
   logger.info({ ferryDocumentCount: documents.length }, "TransXChange ingest complete");
 }
+
+// #endregion
+
+// #region Entrypoint
 
 async function main(): Promise<void> {
   let cleanupWorkingDirectory = shouldCleanupWorkingDirectory();
@@ -601,3 +623,5 @@ async function runCli(): Promise<void> {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   void runCli();
 }
+
+// #endregion

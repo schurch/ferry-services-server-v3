@@ -3,6 +3,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import { config } from "../config.js";
 
+// #region Types
+
 export type ApnsPayload = {
   aps: {
     alert: {
@@ -18,7 +20,15 @@ export type ApnsResult = "success" | "invalid-token" | "skipped";
 
 type ApnsFailureDisposition = "invalid-token" | "error";
 
+// #endregion
+
+// #region State
+
 let cachedToken: { value: string; expiresAt: number } | null = null;
+
+// #endregion
+
+// #region Helpers
 
 function base64Url(value: Buffer | string): string {
   return Buffer.from(value).toString("base64url");
@@ -46,6 +56,10 @@ function apnsAuthToken(): string {
   cachedToken = { value, expiresAt: now + 50 * 60 };
   return value;
 }
+
+// #endregion
+
+// #region Public API
 
 export function classifyApnsFailure(status: number, responseBody: string): ApnsFailureDisposition {
   if (status !== 400 && status !== 410) {
@@ -114,3 +128,5 @@ export async function sendApnsMessage(deviceToken: string, payload: ApnsPayload)
     client.close();
   }
 }
+
+// #endregion

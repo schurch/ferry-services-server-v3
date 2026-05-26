@@ -1,3 +1,5 @@
+// #region Fetcher domain types
+
 export type Location = {
   location_id: number;
   name: string;
@@ -79,3 +81,5 @@ export type ScrapedServiceNotice = {
   detailText?: string | undefined;
   detailMarkdown?: string | undefined;
 };
+
+// #endregion

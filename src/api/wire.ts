@@ -25,6 +25,8 @@ import type {
   VesselVoyageApiResponse
 } from "./schema.js";
 
+// #region Field mappers
+
 function organisationToApi(organisation: OrganisationResponse): OrganisationApiResponse {
   return {
     id: organisation.id,
@@ -107,6 +109,34 @@ function vesselVoyageToApi(voyage: NonNullable<VesselResponse["voyage"]>): Vesse
   };
 }
 
+function reliabilityPeriodToApi(period: ReliabilityPeriodResponse): ReliabilityPeriodApiResponse {
+  return {
+    period: period.period,
+    start: period.start,
+    end: period.end,
+    observed_operating_days: period.observedOperatingDays,
+    scheduled_sailings: period.scheduledSailings,
+    day_statuses: {
+      normal: period.dayStatuses.normal,
+      disrupted: period.dayStatuses.disrupted,
+      cancelled: period.dayStatuses.cancelled
+    }
+  };
+}
+
+function reliabilityToApi(reliability: ReliabilityResponse): ReliabilityApiResponse {
+  return {
+    status_breakdown: {
+      last_7_days: reliabilityPeriodToApi(reliability.statusBreakdown.last7Days),
+      last_30_days: reliabilityPeriodToApi(reliability.statusBreakdown.last30Days)
+    }
+  };
+}
+
+// #endregion
+
+// #region Public API
+
 export function vesselToApi(vessel: VesselResponse): VesselApiResponse {
   return {
     mmsi: vessel.mmsi,
@@ -136,30 +166,6 @@ export function timetableDocumentToApi(document: TimetableDocumentResponse): Tim
   };
 }
 
-function reliabilityPeriodToApi(period: ReliabilityPeriodResponse): ReliabilityPeriodApiResponse {
-  return {
-    period: period.period,
-    start: period.start,
-    end: period.end,
-    observed_operating_days: period.observedOperatingDays,
-    scheduled_sailings: period.scheduledSailings,
-    day_statuses: {
-      normal: period.dayStatuses.normal,
-      disrupted: period.dayStatuses.disrupted,
-      cancelled: period.dayStatuses.cancelled
-    }
-  };
-}
-
-function reliabilityToApi(reliability: ReliabilityResponse): ReliabilityApiResponse {
-  return {
-    status_breakdown: {
-      last_7_days: reliabilityPeriodToApi(reliability.statusBreakdown.last7Days),
-      last_30_days: reliabilityPeriodToApi(reliability.statusBreakdown.last30Days)
-    }
-  };
-}
-
 export function serviceToApi(
   service: ServiceResponse,
   options: { includeAdditionalInfo?: boolean; includeLocationDetails?: boolean; includeVessels?: boolean } = {}
@@ -181,3 +187,5 @@ export function serviceToApi(
     ...(service.reliability !== undefined ? { reliability: reliabilityToApi(service.reliability) } : {})
   };
 }
+
+// #endregion

@@ -1,13 +1,19 @@
 import * as Sentry from "@sentry/node";
 import { config as loadDotenv } from "dotenv";
 import path from "node:path";
+import { config } from "./config.js";
+import { serviceName } from "./logger.js";
+
+// #region Environment loading
 
 loadDotenv({
   path: path.resolve(process.cwd(), "../../.env"),
   quiet: true
 });
-import { config } from "./config.js";
-import { serviceName } from "./logger.js";
+
+// #endregion
+
+// #region Helpers
 
 function serviceDsn(service: typeof serviceName): string | null {
   switch (service) {
@@ -32,6 +38,10 @@ function serviceDsn(service: typeof serviceName): string | null {
   }
 }
 
+// #endregion
+
+// #region Sentry setup
+
 const dsn = serviceDsn(serviceName);
 
 export const sentryEnabled = dsn !== null;
@@ -49,3 +59,5 @@ if (dsn) {
     integrations: [Sentry.fastifyIntegration()]
   });
 }
+
+// #endregion

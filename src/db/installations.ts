@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import type Database from "better-sqlite3";
 import type { CreateInstallationRequest, DeviceType, PushStatus } from "../types/api.js";
 
+// #region Row and result types
+
 type InstallationRow = {
   push_enabled: number;
 };
@@ -20,6 +22,10 @@ type CountRow = {
   count: number;
 };
 
+// #endregion
+
+// #region Helpers
+
 function isoTimestamp(date: Date): string {
   return date.toISOString();
 }
@@ -27,6 +33,10 @@ function isoTimestamp(date: Date): string {
 function shiftedIsoTimestamp(now: Date, deltaMs: number): string {
   return new Date(now.getTime() + deltaMs).toISOString();
 }
+
+// #endregion
+
+// #region Public API
 
 export function hashDeviceToken(deviceToken: string): string {
   return crypto.createHash("sha256").update(deviceToken).digest("hex");
@@ -197,3 +207,5 @@ export function deleteStaleInstallations(
     deletedAttempts: deletedAttempts ?? 0
   };
 }
+
+// #endregion
