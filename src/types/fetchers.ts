@@ -16,15 +16,15 @@ export type WeatherObservation = {
 export type VesselPosition = {
   mmsi: number;
   name: string;
-  speed?: number;
-  course?: number;
+  speed?: number | undefined;
+  course?: number | undefined;
   latitude: number;
   longitude: number;
   lastReceived: string;
-  destinationName?: string;
-  eta?: string;
-  originName?: string;
-  originDepartedAt?: string;
+  destinationName?: string | undefined;
+  eta?: string | undefined;
+  originName?: string | undefined;
+  originDepartedAt?: string | undefined;
   organisationId: number;
 };
 
@@ -36,7 +36,7 @@ export type RailDeparture = {
   scheduledDepartureTime: string;
   estimatedDepartureTime: string;
   cancelled: boolean;
-  platform?: string;
+  platform?: string | undefined;
   locationId: number;
 };
 
@@ -45,9 +45,9 @@ export type ScrapedTimetableDocument = {
   serviceIds: number[];
   title: string;
   sourceUrl: string;
-  contentHash?: string;
-  contentType?: string;
-  contentLength?: number;
+  contentHash?: string | undefined;
+  contentType?: string | undefined;
+  contentLength?: number | undefined;
   lastSeenAt: string;
 };
 
@@ -56,26 +56,26 @@ export type ScrapedService = {
   area: string;
   route: string;
   status: 0 | 1 | 2 | -99;
-  sourceStatus?: string;
-  sourceServiceId?: string;
-  sourceServiceCode?: string;
-  sourceAreaId?: string;
-  sourceAreaName?: string;
-  sourceAreaLatitude?: number;
-  sourceAreaLongitude?: number;
-  additionalInfo?: string;
-  disruptionReason?: string;
+  sourceStatus?: string | undefined;
+  sourceServiceId?: string | undefined;
+  sourceServiceCode?: string | undefined;
+  sourceAreaId?: string | undefined;
+  sourceAreaName?: string | undefined;
+  sourceAreaLatitude?: number | undefined;
+  sourceAreaLongitude?: number | undefined;
+  additionalInfo?: string | undefined;
+  disruptionReason?: string | undefined;
   organisationId: number;
-  lastUpdatedDate?: string;
+  lastUpdatedDate?: string | undefined;
   updated: string;
-  notices?: ScrapedServiceNotice[];
+  notices?: ScrapedServiceNotice[] | undefined;
 };
 
 export type ScrapedServiceNotice = {
-  sourceNoticeKey?: string;
-  sourceNoticeType?: string;
+  sourceNoticeKey?: string | undefined;
+  sourceNoticeType?: string | undefined;
   title: string;
-  disruptionReason?: string;
-  detailText?: string;
-  detailMarkdown?: string;
+  disruptionReason?: string | undefined;
+  detailText?: string | undefined;
+  detailMarkdown?: string | undefined;
 };

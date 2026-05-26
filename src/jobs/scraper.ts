@@ -106,8 +106,8 @@ function htmlOrUndefined(value: string): string | undefined {
 
 function noticeFromHtml(input: {
   title: string;
-  sourceNoticeType?: string;
-  detailText?: string;
+  sourceNoticeType?: string | undefined;
+  detailText?: string | undefined;
 }): ScrapedService["notices"] {
   if (!input.detailText || input.detailText.trim().length === 0) {
     return undefined;

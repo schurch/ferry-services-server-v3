@@ -2,7 +2,7 @@ import fastifyStatic from "@fastify/static";
 import * as Sentry from "@sentry/node";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "@sinclair/typebox";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import fs from "node:fs";
 import path from "node:path";
@@ -86,18 +86,11 @@ const IfNoneMatchHeaders = Type.Object({
   "if-none-match": Type.Optional(Type.String())
 });
 
-type CreateInstallationRequestBody = {
-  device_token: string;
-  device_type: "IOS" | "Android";
-};
+type CreateInstallationRequestBody = Static<typeof CreateInstallationRequestSchema>;
 
-type AddServiceRequestBody = {
-  service_id: number;
-};
+type AddServiceRequestBody = Static<typeof AddServiceRequestSchema>;
 
-type PushStatusBody = {
-  enabled: boolean;
-};
+type PushStatusBody = Static<typeof PushStatusSchema>;
 
 type BuildAppOptions = {
   db?: ReturnType<typeof openDatabase>;

@@ -42,28 +42,45 @@ const envSchema = Type.Object({
 type Env = Static<typeof envSchema>;
 
 function parseOptionalInteger(value: string | undefined): number | undefined {
-  if (!value) {
+  if (value === undefined || value.trim() === "") {
     return undefined;
   }
 
-  const parsed = Number.parseInt(value, 10);
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return Number.NaN;
+  }
+
+  const parsed = Number.parseInt(trimmed, 10);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function parseOptionalBoolean(value: string | undefined): boolean | undefined {
-  if (!value) {
+  if (value === undefined || value.trim() === "") {
     return undefined;
   }
 
-  return ["1", "true", "yes"].includes(value.toLowerCase());
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no"].includes(normalized)) {
+    return false;
+  }
+  throw new Error(`Invalid boolean value: ${value}`);
 }
 
 function parseOptionalNumber(value: string | undefined): number | undefined {
-  if (!value) {
+  if (value === undefined || value.trim() === "") {
     return undefined;
   }
 
-  const parsed = Number.parseFloat(value);
+  const trimmed = value.trim();
+  if (!/^(?:\d+|\d*\.\d+)$/.test(trimmed)) {
+    return Number.NaN;
+  }
+
+  const parsed = Number.parseFloat(trimmed);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 

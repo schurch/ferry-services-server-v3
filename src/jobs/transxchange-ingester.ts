@@ -23,9 +23,25 @@ import type {
   TransxchangeVehicleJourney
 } from "../types/transxchange.js";
 
-type RawVehicleJourney = Partial<TransxchangeVehicleJourney> & {
+type RawVehicleJourney = {
   vehicleJourneyCode: string;
-  vehicleJourneyRef?: string;
+  vehicleJourneyRef?: string | undefined;
+  serviceCode?: string | undefined;
+  lineId?: string | undefined;
+  journeyPatternId?: string | undefined;
+  timingLinkRefs?: string[] | undefined;
+  operatorRef?: string | undefined;
+  departureTime?: string | undefined;
+  dayRules?: string[] | undefined;
+  weekOfMonthRules?: string[] | undefined;
+  servicedOrganisationDaysOfOperation?: TransxchangeDateRange[] | undefined;
+  servicedOrganisationDaysOfNonOperation?: TransxchangeDateRange[] | undefined;
+  daysOfOperation?: TransxchangeDateRange[] | undefined;
+  daysOfNonOperation?: TransxchangeDateRange[] | undefined;
+  bankHolidayOperationRules?: string[] | undefined;
+  bankHolidayNonOperationRules?: string[] | undefined;
+  note?: string | undefined;
+  noteCode?: string | undefined;
 };
 
 type ServicedOrganisationCalendars = {

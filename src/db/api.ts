@@ -182,17 +182,68 @@ function weatherResponse(row: WeatherRow): LocationWeatherResponse {
   };
 }
 
+function railDepartureResponse(row: RailDepartureRow, departure: string): RailDepartureResponse {
+  return {
+    from: row.departure_name,
+    to: row.destination_name,
+    departure,
+    departureInfo: row.estimated_departure_time,
+    ...(row.platform !== null ? { platform: row.platform } : {}),
+    isCancelled: row.cancelled !== 0
+  };
+}
+
+function locationResponse(
+  row: LocationRow,
+  lookups: {
+    scheduledDepartures: Map<number, DepartureResponse[]>;
+    nextDepartures: Map<number, DepartureResponse>;
+    weatherByLocation: Map<number, LocationWeatherResponse>;
+    nextRailByLocation: Map<number, RailDepartureResponse>;
+  }
+): LocationResponse {
+  const nextDeparture = lookups.nextDepartures.get(row.location_id);
+  const weather = lookups.weatherByLocation.get(row.location_id);
+  const nextRailDeparture = lookups.nextRailByLocation.get(row.location_id);
+
+  return {
+    id: row.location_id,
+    name: row.name,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    ...(lookups.scheduledDepartures.has(row.location_id)
+      ? { scheduledDepartures: lookups.scheduledDepartures.get(row.location_id) ?? [] }
+      : {}),
+    ...(nextDeparture !== undefined ? { nextDeparture } : {}),
+    ...(weather !== undefined ? { weather } : {}),
+    ...(nextRailDeparture !== undefined ? { nextRailDeparture } : {})
+  };
+}
+
+function organisationResponse(row: OrganisationRow): OrganisationResponse {
+  return {
+    id: row.organisation_id,
+    name: row.name,
+    ...(row.website !== null ? { website: row.website } : {}),
+    ...(row.local_phone !== null ? { localNumber: row.local_phone } : {}),
+    ...(row.international_phone !== null ? { internationalNumber: row.international_phone } : {}),
+    ...(row.email !== null ? { email: row.email } : {}),
+    ...(row.x !== null ? { x: row.x } : {}),
+    ...(row.facebook !== null ? { facebook: row.facebook } : {})
+  };
+}
+
 function vesselResponse(row: VesselRow, serviceLocations?: LocationResponse[], now = new Date()): VesselResponse {
   const voyage = serviceLocations ? vesselVoyageResponse(row, serviceLocations, now) : undefined;
   return {
     mmsi: row.mmsi,
     name: row.name,
-    speed: value(row.speed),
-    course: value(row.course),
+    ...(row.speed !== null ? { speed: row.speed } : {}),
+    ...(row.course !== null ? { course: row.course } : {}),
     latitude: row.latitude,
     longitude: row.longitude,
     lastReceived: timestampResponse(row.last_received),
-    voyage
+    ...(voyage !== undefined ? { voyage } : {})
   };
 }
 
@@ -241,13 +292,14 @@ function vesselVoyageResponse(row: VesselRow, serviceLocations: LocationResponse
     return undefined;
   }
 
+  const eta = voyageEta(serviceLocations, originLocation, destinationLocation, row, now);
   const progress = computeProgress(originLocation, destinationLocation, row.latitude, row.longitude);
   return {
     originLocation,
     destinationLocation,
     departedAt,
-    eta: voyageEta(serviceLocations, originLocation, destinationLocation, row, now),
-    progress
+    ...(eta !== undefined ? { eta } : {}),
+    ...(progress !== undefined ? { progress } : {})
   };
 }
 
@@ -546,7 +598,7 @@ function isAnyScottishBankHoliday(date: Date): boolean {
 
 function isDisplacementHoliday(date: Date): boolean {
   const year = date.getUTCFullYear();
-  const observed = [
+  const observed: Array<[Date, Date]> = [
     [observedNewYearsDay(year), dateUtc(year, 1, 1)],
     [observedJan2ndScotland(year), dateUtc(year, 1, 2)],
     [observedStAndrewsDay(year), dateUtc(year, 11, 30)],
@@ -646,14 +698,7 @@ function createLocationLookup(
     const departureTime = timeWithSeconds(row.scheduled_departure_time.replace(" ", "T").split("T").pop() ?? "");
     const departure = utcIsoResponse(today, departureTime);
     if (!nextRailByLocation.has(row.location_id) && new Date(departure) > now) {
-      nextRailByLocation.set(row.location_id, {
-        from: row.departure_name,
-        to: row.destination_name,
-        departure,
-        departureInfo: row.estimated_departure_time,
-        platform: value(row.platform),
-        isCancelled: row.cancelled !== 0
-      });
+      nextRailByLocation.set(row.location_id, railDepartureResponse(row, departure));
     }
   }
 
@@ -667,16 +712,7 @@ function createLocationLookup(
   const lookup = new Map<number, LocationResponse[]>();
   for (const row of rows) {
     const locations = lookup.get(row.service_id) ?? [];
-    locations.push({
-      id: row.location_id,
-      name: row.name,
-      latitude: row.latitude,
-      longitude: row.longitude,
-      scheduledDepartures: scheduledDepartures.has(row.location_id) ? scheduledDepartures.get(row.location_id) ?? [] : undefined,
-      nextDeparture: nextDepartures.get(row.location_id),
-      weather: weatherByLocation.get(row.location_id),
-      nextRailDeparture: nextRailByLocation.get(row.location_id)
-    });
+    locations.push(locationResponse(row, { scheduledDepartures, nextDepartures, weatherByLocation, nextRailByLocation }));
     lookup.set(row.service_id, locations);
   }
   return lookup;
@@ -723,28 +759,12 @@ function createServiceLocationLookup(
       const departureTime = timeWithSeconds(row.scheduled_departure_time.replace(" ", "T").split("T").pop() ?? "");
       const departure = utcIsoResponse(today, departureTime);
       if (!nextRailByLocation.has(row.location_id) && new Date(departure) > now) {
-        nextRailByLocation.set(row.location_id, {
-          from: row.departure_name,
-          to: row.destination_name,
-          departure,
-          departureInfo: row.estimated_departure_time,
-          platform: value(row.platform),
-          isCancelled: row.cancelled !== 0
-        });
+        nextRailByLocation.set(row.location_id, railDepartureResponse(row, departure));
       }
     }
   }
 
-  return new Map([[serviceId, rows.map((row) => ({
-    id: row.location_id,
-    name: row.name,
-    latitude: row.latitude,
-    longitude: row.longitude,
-    scheduledDepartures: scheduledDepartures.has(row.location_id) ? scheduledDepartures.get(row.location_id) ?? [] : undefined,
-    nextDeparture: nextDepartures.get(row.location_id),
-    weather: weatherByLocation.get(row.location_id),
-    nextRailDeparture: nextRailByLocation.get(row.location_id)
-  }))]]);
+  return new Map([[serviceId, rows.map((row) => locationResponse(row, { scheduledDepartures, nextDepartures, weatherByLocation, nextRailByLocation }))]]);
 }
 
 function createOrganisationLookup(db: Database.Database): Map<number, OrganisationResponse> {
@@ -754,16 +774,7 @@ function createOrganisationLookup(db: Database.Database): Map<number, Organisati
     JOIN organisations o ON o.organisation_id = s.organisation_id
   `).all() as OrganisationRow[];
 
-  return new Map(rows.map((row) => [row.service_id, {
-    id: row.organisation_id,
-    name: row.name,
-    website: value(row.website),
-    localNumber: value(row.local_phone),
-    internationalNumber: value(row.international_phone),
-    email: value(row.email),
-    x: value(row.x),
-    facebook: value(row.facebook)
-  }]));
+  return new Map(rows.map((row) => [row.service_id, organisationResponse(row)]));
 }
 
 function createServiceOrganisationLookup(db: Database.Database, serviceId: number): Map<number, OrganisationResponse> {
@@ -778,16 +789,7 @@ function createServiceOrganisationLookup(db: Database.Database, serviceId: numbe
     return new Map();
   }
 
-  return new Map([[row.service_id, {
-    id: row.organisation_id,
-    name: row.name,
-    website: value(row.website),
-    localNumber: value(row.local_phone),
-    internationalNumber: value(row.international_phone),
-    email: value(row.email),
-    x: value(row.x),
-    facebook: value(row.facebook)
-  }]]);
+  return new Map([[row.service_id, organisationResponse(row)]]);
 }
 
 function createSingleServiceVesselLookup(db: Database.Database, serviceId: number, now = new Date()): Map<number, VesselRow[]> {
@@ -840,24 +842,26 @@ function serviceResponse(
   now = new Date()
 ): ServiceResponse {
   const locations = lookups.locations.get(row.service_id) ?? [];
+  const operator = lookups.organisations.get(row.service_id);
+  const reliability = lookups.reliability?.get(row.service_id);
   return {
     serviceId: row.service_id,
     area: row.area,
     route: row.route,
     status: staleStatus(row.status, row.updated, now),
     locations,
-    additionalInfo: value(row.additional_info),
-    disruptionReason: value(row.disruption_reason),
-    lastUpdatedDate: optionalTimestampResponse(row.last_updated_date),
+    ...(row.additional_info !== null ? { additionalInfo: row.additional_info } : {}),
+    ...(row.disruption_reason !== null ? { disruptionReason: row.disruption_reason } : {}),
+    ...(row.last_updated_date !== null ? { lastUpdatedDate: timestampResponse(row.last_updated_date) } : {}),
     vessels: (lookups.vessels.get(row.service_id) ?? []).flatMap((vessel) => {
       const response = serviceVesselResponse(vessel, locations, now);
       return response ? [response] : [];
     }),
-    operator: lookups.organisations.get(row.service_id),
+    ...(operator !== undefined ? { operator } : {}),
     scheduledDeparturesAvailable: lookups.scheduledServices.has(row.service_id),
     updated: timestampResponse(row.updated),
-    timetableDocuments: lookups.timetableDocuments === undefined ? undefined : lookups.timetableDocuments.get(row.service_id) ?? [],
-    reliability: lookups.reliability?.get(row.service_id)
+    ...(lookups.timetableDocuments !== undefined ? { timetableDocuments: lookups.timetableDocuments.get(row.service_id) ?? [] } : {}),
+    ...(reliability !== undefined ? { reliability } : {})
   };
 }
 
@@ -909,9 +913,9 @@ function createTimetableDocumentResponses(db: Database.Database, serviceId?: num
     serviceIds: serviceIdsByDocument.get(row.timetable_document_id) ?? [],
     title: row.title,
     sourceUrl: row.source_url,
-    contentHash: value(row.content_hash),
-    contentType: value(row.content_type),
-    contentLength: value(row.content_length),
+    ...(row.content_hash !== null ? { contentHash: row.content_hash } : {}),
+    ...(row.content_type !== null ? { contentType: row.content_type } : {}),
+    ...(row.content_length !== null ? { contentLength: row.content_length } : {}),
     lastSeenAt: timestampResponse(row.last_seen_at),
     updated: timestampResponse(row.updated)
   }));
@@ -1439,7 +1443,7 @@ function departureResponseFromRow(row: LocationDepartureRow): DepartureResponse 
     },
     departure: londonLocalTimestampResponse(row.departure),
     arrival: londonLocalTimestampResponse(row.arrival),
-    notes: value(row.notes)
+    ...(row.notes !== null ? { notes: row.notes } : {})
   };
 }
 

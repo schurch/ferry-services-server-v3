@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "@sinclair/typebox";
 
 export const UTCTimeSchema = Type.Unsafe<string>({
   $id: "UTCTime",
@@ -205,3 +205,17 @@ export const ServiceListResponseSchema = Type.Object({
 }, { $id: "ServiceListResponse" });
 
 export const SnapshotBodySchema = Type.String({ format: "binary", $id: "SnapshotBody" });
+
+export type OrganisationApiResponse = Static<typeof OrganisationResponseSchema>;
+export type LocationWeatherApiResponse = Static<typeof LocationWeatherResponseSchema>;
+export type RailDepartureApiResponse = Static<typeof RailDepartureResponseSchema>;
+export type DepartureDestinationApiResponse = Static<typeof DepartureDestinationSchema>;
+export type DepartureApiResponse = Static<typeof DepartureResponseSchema>;
+export type LocationApiResponse = Static<typeof LocationResponseSchema>;
+export type VesselVoyageApiResponse = Static<typeof VesselVoyageResponseSchema>;
+export type VesselApiResponse = Static<typeof VesselResponseSchema>;
+export type TimetableDocumentApiResponse = Static<typeof TimetableDocumentResponseSchema>;
+export type ReliabilityPeriodApiResponse = Static<typeof ReliabilityPeriodResponseSchema>;
+export type ReliabilityApiResponse = Static<typeof ReliabilityResponseSchema>;
+export type ServiceApiResponse = Static<typeof ServiceResponseSchema>;
+export type ServiceListApiResponse = Static<typeof ServiceListResponseSchema>;

@@ -21,9 +21,9 @@ type DocumentLink = {
 };
 
 type DocumentMetadata = {
-  contentHash?: string;
-  contentType?: string;
-  contentLength?: number;
+  contentHash?: string | undefined;
+  contentType?: string | undefined;
+  contentLength?: number | undefined;
 };
 
 type CalMacTimetable = {

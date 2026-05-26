@@ -42,7 +42,7 @@ type MarineTrafficVoyage = {
 
 type VesselFetchResult = {
   position: PositionUpdate;
-  name?: string;
+  name?: string | undefined;
 } | "blocked" | null;
 
 type MarineTrafficHeaders = Record<string, string>;
@@ -55,9 +55,9 @@ type PositionUpdate = {
   mmsi: number;
   latitude: number;
   longitude: number;
-  speed?: number;
-  course?: number;
-  destinationName?: string;
+  speed?: number | undefined;
+  course?: number | undefined;
+  destinationName?: string | undefined;
   receivedAt: string;
 };
 
@@ -73,9 +73,9 @@ type PreviousVesselPosition = {
   name: string;
   latitude: number;
   longitude: number;
-  destinationName?: string;
-  originName?: string;
-  originDepartedAt?: string;
+  destinationName?: string | undefined;
+  originName?: string | undefined;
+  originDepartedAt?: string | undefined;
 };
 
 const initCycleTLS = cycleTLS.default as unknown as () => Promise<CycleTLSClient>;
@@ -729,7 +729,7 @@ function isCloudflareChallenge(status: number, contentType: string | null, body:
   return status === 403 && contentType?.includes("text/html") === true && body.includes("Attention Required! | Cloudflare");
 }
 
-function marineTrafficPosition(value: MarineTrafficVessel): { position: PositionUpdate; name?: string; shipId?: number } | null {
+function marineTrafficPosition(value: MarineTrafficVessel): { position: PositionUpdate; name?: string | undefined; shipId?: number | undefined } | null {
   const mmsi = parseInteger(value.MMSI);
   const latitude = parseNumber(value.LAT);
   const longitude = parseNumber(value.LON);

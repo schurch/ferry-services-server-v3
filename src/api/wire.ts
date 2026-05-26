@@ -9,30 +9,36 @@ import type {
   TimetableDocumentResponse,
   VesselResponse
 } from "../types/api.js";
+import type {
+  DepartureApiResponse,
+  DepartureDestinationApiResponse,
+  LocationApiResponse,
+  LocationWeatherApiResponse,
+  OrganisationApiResponse,
+  RailDepartureApiResponse,
+  ReliabilityApiResponse,
+  ReliabilityPeriodApiResponse,
+  ServiceApiResponse,
+  ServiceListApiResponse,
+  TimetableDocumentApiResponse,
+  VesselApiResponse,
+  VesselVoyageApiResponse
+} from "./schema.js";
 
-function withoutUndefined<T extends Record<string, unknown>>(value: T): T {
-  for (const key of Object.keys(value)) {
-    if (value[key] === undefined) {
-      delete value[key];
-    }
-  }
-  return value;
-}
-
-function organisationToApi(organisation: OrganisationResponse): Record<string, unknown> {
-  return withoutUndefined({
+function organisationToApi(organisation: OrganisationResponse): OrganisationApiResponse {
+  return {
     id: organisation.id,
     name: organisation.name,
-    website: organisation.website,
-    local_number: organisation.localNumber,
-    international_number: organisation.internationalNumber,
-    email: organisation.email,
-    x: organisation.x,
-    facebook: organisation.facebook
-  });
+    ...(organisation.website !== undefined ? { website: organisation.website } : {}),
+    ...(organisation.localNumber !== undefined ? { local_number: organisation.localNumber } : {}),
+    ...(organisation.internationalNumber !== undefined ? { international_number: organisation.internationalNumber } : {}),
+    ...(organisation.email !== undefined ? { email: organisation.email } : {}),
+    ...(organisation.x !== undefined ? { x: organisation.x } : {}),
+    ...(organisation.facebook !== undefined ? { facebook: organisation.facebook } : {})
+  };
 }
 
-function weatherToApi(weather: LocationWeatherResponse): Record<string, unknown> {
+function weatherToApi(weather: LocationWeatherResponse): LocationWeatherApiResponse {
   return {
     icon: weather.icon,
     description: weather.description,
@@ -43,40 +49,46 @@ function weatherToApi(weather: LocationWeatherResponse): Record<string, unknown>
   };
 }
 
-function railDepartureToApi(departure: RailDepartureResponse): Record<string, unknown> {
-  return withoutUndefined({
+function railDepartureToApi(departure: RailDepartureResponse): RailDepartureApiResponse {
+  return {
     from: departure.from,
     to: departure.to,
     departure: departure.departure,
     departure_info: departure.departureInfo,
-    platform: departure.platform,
+    ...(departure.platform !== undefined ? { platform: departure.platform } : {}),
     is_cancelled: departure.isCancelled
-  });
+  };
 }
 
-function locationToApi(location: LocationResponse, options: { includeDetails?: boolean } = {}): Record<string, unknown> {
-  return withoutUndefined({
+function locationToApi(location: LocationResponse, options: { includeDetails?: boolean } = {}): LocationApiResponse {
+  return {
     id: location.id,
     name: location.name,
     latitude: location.latitude,
     longitude: location.longitude,
-    scheduled_departures: options.includeDetails === false ? undefined : location.scheduledDepartures?.map(departureToApi),
-    next_departure: options.includeDetails === false || !location.nextDeparture ? undefined : departureToApi(location.nextDeparture),
-    next_rail_departure: options.includeDetails === false || !location.nextRailDeparture ? undefined : railDepartureToApi(location.nextRailDeparture),
-    weather: options.includeDetails === false || !location.weather ? undefined : weatherToApi(location.weather)
-  });
+    ...(options.includeDetails !== false && location.scheduledDepartures !== undefined
+      ? { scheduled_departures: location.scheduledDepartures.map(departureToApi) }
+      : {}),
+    ...(options.includeDetails !== false && location.nextDeparture !== undefined
+      ? { next_departure: departureToApi(location.nextDeparture) }
+      : {}),
+    ...(options.includeDetails !== false && location.nextRailDeparture !== undefined
+      ? { next_rail_departure: railDepartureToApi(location.nextRailDeparture) }
+      : {}),
+    ...(options.includeDetails !== false && location.weather !== undefined ? { weather: weatherToApi(location.weather) } : {})
+  };
 }
 
-function departureToApi(departure: { destination: LocationResponse; departure: string; arrival: string; notes?: string }): Record<string, unknown> {
-  return withoutUndefined({
-    destination: locationToApi(departure.destination),
+function departureToApi(departure: { destination: LocationResponse; departure: string; arrival: string; notes?: string }): DepartureApiResponse {
+  return {
+    destination: locationReferenceToApi(departure.destination),
     departure: departure.departure,
     arrival: departure.arrival,
-    notes: departure.notes
-  });
+    ...(departure.notes !== undefined ? { notes: departure.notes } : {})
+  };
 }
 
-function locationReferenceToApi(location: { id: number; name: string; latitude: number; longitude: number }): Record<string, unknown> {
+function locationReferenceToApi(location: { id: number; name: string; latitude: number; longitude: number }): DepartureDestinationApiResponse {
   return {
     id: location.id,
     name: location.name,
@@ -85,44 +97,46 @@ function locationReferenceToApi(location: { id: number; name: string; latitude: 
   };
 }
 
-export function vesselToApi(vessel: VesselResponse): Record<string, unknown> {
-  return withoutUndefined({
+function vesselVoyageToApi(voyage: NonNullable<VesselResponse["voyage"]>): VesselVoyageApiResponse {
+  return {
+    origin_location: locationReferenceToApi(voyage.originLocation),
+    destination_location: locationReferenceToApi(voyage.destinationLocation),
+    departed_at: voyage.departedAt,
+    ...(voyage.eta !== undefined ? { eta: voyage.eta } : {}),
+    ...(voyage.progress !== undefined ? { progress: voyage.progress } : {})
+  };
+}
+
+export function vesselToApi(vessel: VesselResponse): VesselApiResponse {
+  return {
     mmsi: vessel.mmsi,
     name: vessel.name,
-    speed: vessel.speed,
-    course: vessel.course,
+    ...(vessel.speed !== undefined ? { speed: vessel.speed } : {}),
+    ...(vessel.course !== undefined ? { course: vessel.course } : {}),
     latitude: vessel.latitude,
     longitude: vessel.longitude,
     last_received: vessel.lastReceived,
-    voyage: vessel.voyage
-      ? {
-          origin_location: locationReferenceToApi(vessel.voyage.originLocation),
-          destination_location: locationReferenceToApi(vessel.voyage.destinationLocation),
-          departed_at: vessel.voyage.departedAt,
-          eta: vessel.voyage.eta,
-          progress: vessel.voyage.progress
-        }
-      : undefined
-  });
+    ...(vessel.voyage !== undefined ? { voyage: vesselVoyageToApi(vessel.voyage) } : {})
+  };
 }
 
-export function timetableDocumentToApi(document: TimetableDocumentResponse): Record<string, unknown> {
-  return withoutUndefined({
+export function timetableDocumentToApi(document: TimetableDocumentResponse): TimetableDocumentApiResponse {
+  return {
     id: document.id,
     organisation_id: document.organisationId,
     organisation_name: document.organisationName,
     service_ids: document.serviceIds,
     title: document.title,
     source_url: document.sourceUrl,
-    content_hash: document.contentHash,
-    content_type: document.contentType,
-    content_length: document.contentLength,
+    ...(document.contentHash !== undefined ? { content_hash: document.contentHash } : {}),
+    ...(document.contentType !== undefined ? { content_type: document.contentType } : {}),
+    ...(document.contentLength !== undefined ? { content_length: document.contentLength } : {}),
     last_seen_at: document.lastSeenAt,
     updated: document.updated
-  });
+  };
 }
 
-function reliabilityPeriodToApi(period: ReliabilityPeriodResponse): Record<string, unknown> {
+function reliabilityPeriodToApi(period: ReliabilityPeriodResponse): ReliabilityPeriodApiResponse {
   return {
     period: period.period,
     start: period.start,
@@ -137,7 +151,7 @@ function reliabilityPeriodToApi(period: ReliabilityPeriodResponse): Record<strin
   };
 }
 
-function reliabilityToApi(reliability: ReliabilityResponse): Record<string, unknown> {
+function reliabilityToApi(reliability: ReliabilityResponse): ReliabilityApiResponse {
   return {
     status_breakdown: {
       last_7_days: reliabilityPeriodToApi(reliability.statusBreakdown.last7Days),
@@ -149,21 +163,21 @@ function reliabilityToApi(reliability: ReliabilityResponse): Record<string, unkn
 export function serviceToApi(
   service: ServiceResponse,
   options: { includeAdditionalInfo?: boolean; includeLocationDetails?: boolean; includeVessels?: boolean } = {}
-): Record<string, unknown> {
-  return withoutUndefined({
+): ServiceApiResponse | ServiceListApiResponse {
+  return {
     service_id: service.serviceId,
     area: service.area,
     route: service.route,
     status: service.status,
-    locations: service.locations.map((location) => locationToApi(location, { includeDetails: options.includeLocationDetails })),
-    additional_info: options.includeAdditionalInfo === false ? undefined : service.additionalInfo,
-    disruption_reason: service.disruptionReason,
-    last_updated_date: service.lastUpdatedDate,
-    vessels: options.includeVessels === false ? [] : service.vessels.map(vesselToApi),
-    operator: service.operator ? organisationToApi(service.operator) : undefined,
+    locations: service.locations.map((location) => locationToApi(location, options.includeLocationDetails === undefined ? {} : { includeDetails: options.includeLocationDetails })),
+    ...(options.includeAdditionalInfo !== false && service.additionalInfo !== undefined ? { additional_info: service.additionalInfo } : {}),
+    ...(service.disruptionReason !== undefined ? { disruption_reason: service.disruptionReason } : {}),
+    ...(service.lastUpdatedDate !== undefined ? { last_updated_date: service.lastUpdatedDate } : {}),
+    ...(options.includeVessels === false ? { vessels: [] } : { vessels: service.vessels.map(vesselToApi) }),
+    ...(service.operator !== undefined ? { operator: organisationToApi(service.operator) } : {}),
     scheduled_departures_available: service.scheduledDeparturesAvailable,
     updated: service.updated,
-    timetable_documents: service.timetableDocuments?.map(timetableDocumentToApi),
-    reliability: service.reliability ? reliabilityToApi(service.reliability) : undefined
-  });
+    ...(service.timetableDocuments !== undefined ? { timetable_documents: service.timetableDocuments.map(timetableDocumentToApi) } : {}),
+    ...(service.reliability !== undefined ? { reliability: reliabilityToApi(service.reliability) } : {})
+  };
 }

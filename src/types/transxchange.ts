@@ -15,8 +15,8 @@ export type TransxchangeService = {
   description: string;
   origin: string;
   destination: string;
-  startDate?: string;
-  endDate?: string;
+  startDate?: string | undefined;
+  endDate?: string | undefined;
 };
 
 export type TransxchangeLine = {
@@ -77,8 +77,8 @@ export type TransxchangeDocument = {
   sourcePath: string;
   sourceFileName: string;
   sourceVersionKey: string;
-  sourceCreationDateTime?: string;
-  sourceModificationDateTime?: string;
+  sourceCreationDateTime?: string | undefined;
+  sourceModificationDateTime?: string | undefined;
   stopPoints: TransxchangeStopPoint[];
   services: TransxchangeService[];
   lines: TransxchangeLine[];
