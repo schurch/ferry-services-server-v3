@@ -1,6 +1,31 @@
 import { config } from "../config.js";
+import type {
+  DepartureApiResponse,
+  LocationApiResponse,
+  OrganisationApiResponse,
+  ServiceApiResponse,
+  ServiceListApiResponse
+} from "../api/schema.js";
 
-type ApiRecord = Record<string, any>;
+type PageService = Omit<ServiceApiResponse, "locations"> & {
+  locations: LocationApiResponse[];
+};
+
+type MapPoint = {
+  latitude: number;
+  longitude: number;
+  label: string;
+  type: "location" | "vessel";
+  speed?: number | null;
+  course?: number | null;
+  lastReceived?: string | null;
+};
+
+type AttributeValue = string | number | boolean | null | undefined;
+
+type LocationWithScheduledDepartures = LocationApiResponse & {
+  scheduled_departures: DepartureApiResponse[];
+};
 
 const statusNames = ["normal", "disrupted", "cancelled"] as const;
 
@@ -15,6 +40,38 @@ function escapeHtml(value: unknown): string {
 
 function escapeAttribute(value: unknown): string {
   return escapeHtml(value).replaceAll("`", "&#96;");
+}
+
+function attributes(values: Record<string, AttributeValue>): string {
+  return Object.entries(values)
+    .flatMap(([key, value]) => {
+      if (value === false || value === null || value === undefined) {
+        return [];
+      }
+      return value === true ? [key] : [`${key}="${escapeAttribute(value)}"`];
+    })
+    .join(" ");
+}
+
+function element(name: string, attrs: Record<string, AttributeValue>, content = ""): string {
+  const renderedAttrs = attributes(attrs);
+  return `<${name}${renderedAttrs ? ` ${renderedAttrs}` : ""}>${content}</${name}>`;
+}
+
+function panel(content: string, extraClass?: string): string {
+  return element("section", { class: ["panel", extraClass].filter(Boolean).join(" ") }, content);
+}
+
+function sectionTitle(value: string, extraClass?: string): string {
+  return element("h2", { class: ["title", "card-subtitle", extraClass].filter(Boolean).join(" ") }, escapeHtml(value));
+}
+
+function buttonLink(href: string | undefined, label: string, extraAttrs: Record<string, AttributeValue> = {}): string {
+  return href ? element("a", { class: "button", href, ...extraAttrs }, escapeHtml(label)) : "";
+}
+
+function hasScheduledDepartures(location: LocationApiResponse): location is LocationWithScheduledDepartures {
+  return Array.isArray(location.scheduled_departures) && location.scheduled_departures.length > 0;
 }
 
 function escapeJsonForScript(value: unknown): string {
@@ -166,8 +223,8 @@ function pageChrome(content: string): string {
   </main>`;
 }
 
-export function renderServicesPage(services: ApiRecord[]): string {
-  const groups = new Map<string, ApiRecord[]>();
+export function renderServicesPage(services: Array<ServiceApiResponse | ServiceListApiResponse>): string {
+  const groups = new Map<string, Array<ServiceApiResponse | ServiceListApiResponse>>();
   for (const service of services) {
     const key = String(service.operator?.name ?? "Services");
     groups.set(key, [...(groups.get(key) ?? []), service]);
@@ -179,7 +236,13 @@ export function renderServicesPage(services: ApiRecord[]): string {
       const logo = hasCalmacBrand(groupName) ? `<img class="group-logo" src="/assets/calmac-logo.png" alt="" aria-hidden="true">` : "";
       const rows = groupServices.map((service) => {
         const status = statusName(service.status);
-        return `<a class="row-link" href="/service/${encodeURIComponent(String(service.service_id))}" data-service-row data-search="${escapeAttribute(`${service.area} ${service.route}`.toLowerCase())}">
+        const rowAttrs = attributes({
+          class: "row-link",
+          href: `/service/${encodeURIComponent(String(service.service_id))}`,
+          "data-service-row": true,
+          "data-search": `${service.area} ${service.route}`.toLowerCase()
+        });
+        return `<a ${rowAttrs}>
           <article class="row">
             <span class="status-dot status-${status}" aria-hidden="true"></span>
             <div class="row-main">
@@ -208,9 +271,9 @@ export function renderServicesPage(services: ApiRecord[]): string {
   return layout("Scottish Ferries", pageChrome(content));
 }
 
-function locationSummary(service: ApiRecord): string {
+function locationSummary(service: PageService): string {
   const locations = [...(service.locations ?? [])].sort((left, right) => String(left.name).localeCompare(String(right.name)));
-  return `<h2 class="title card-subtitle">Locations</h2>
+  return `${sectionTitle("Locations")}
   <div class="grid">
     ${locations.map((location) => {
       const nextFerry = location.next_departure
@@ -230,8 +293,8 @@ function locationSummary(service: ApiRecord): string {
   </div>`;
 }
 
-function serviceMap(service: ApiRecord): string {
-  const locationPoints = ((service.locations ?? []) as ApiRecord[])
+function serviceMap(service: PageService): string {
+  const locationPoints: MapPoint[] = service.locations
     .filter((location) => Number.isFinite(location.latitude) && Number.isFinite(location.longitude))
     .map((location) => ({
       latitude: location.latitude,
@@ -239,15 +302,15 @@ function serviceMap(service: ApiRecord): string {
       label: String(location.name ?? "Location"),
       type: "location"
     }));
-  const vesselPoints = ((service.vessels ?? []) as ApiRecord[])
+  const vesselPoints: MapPoint[] = (service.vessels ?? [])
     .filter((vessel) => Number.isFinite(vessel.latitude) && Number.isFinite(vessel.longitude))
     .map((vessel) => ({
       latitude: vessel.latitude,
       longitude: vessel.longitude,
       label: String(vessel.name ?? "Vessel"),
       type: "vessel",
-      speed: Number.isFinite(vessel.speed) ? vessel.speed : null,
-      course: Number.isFinite(vessel.course) ? vessel.course : null,
+      speed: typeof vessel.speed === "number" && Number.isFinite(vessel.speed) ? vessel.speed : null,
+      course: typeof vessel.course === "number" && Number.isFinite(vessel.course) ? vessel.course : null,
       lastReceived: vessel.last_received ?? null
     }));
   const points = [...locationPoints, ...vesselPoints];
@@ -268,23 +331,23 @@ function serviceMap(service: ApiRecord): string {
   </div>`;
 }
 
-function scheduledDepartures(service: ApiRecord, departuresDate: string, now: Date): string {
+function scheduledDepartures(service: PageService, departuresDate: string, now: Date): string {
   if (!service.scheduled_departures_available) return "";
 
-  const locations = ((service.locations ?? []) as ApiRecord[])
-    .filter((location) => Array.isArray(location.scheduled_departures) && location.scheduled_departures.length > 0)
+  const locations = service.locations
+    .filter(hasScheduledDepartures)
     .sort((left, right) => String(left.name).localeCompare(String(right.name)));
   if (locations.length === 0) return "";
 
   const routes = locations.map((location) => {
-    const byDestination = new Map<number, ApiRecord[]>();
+    const byDestination = new Map<number, DepartureApiResponse[]>();
     for (const departure of location.scheduled_departures) {
-      const destinationId = Number(departure.destination?.id ?? 0);
+      const destinationId = departure.destination.id;
       byDestination.set(destinationId, [...(byDestination.get(destinationId) ?? []), departure]);
     }
 
     return [...byDestination.entries()].map(([destinationId, departures]) => {
-      const destinationName = departures[0]?.destination?.name ?? "Destination";
+      const destinationName = departures[0]?.destination.name ?? "Destination";
       const rows = departures
         .sort((left, right) => String(left.departure).localeCompare(String(right.departure)))
         .map((departure) => {
@@ -303,7 +366,7 @@ function scheduledDepartures(service: ApiRecord, departuresDate: string, now: Da
 
   return `<div class="panel-divider"></div>
   <div class="section-header">
-    <h2 class="title card-subtitle">Scheduled Departures</h2>
+    ${sectionTitle("Scheduled Departures")}
     <form class="date-picker" method="get" action="/service/${encodeURIComponent(String(service.service_id))}">
       <span class="sr-only">Scheduled departures date</span>
       <input class="date-input" type="date" name="departuresDate" value="${escapeAttribute(departuresDate)}" aria-label="Scheduled departures date" onchange="this.form.submit()">
@@ -312,15 +375,15 @@ function scheduledDepartures(service: ApiRecord, departuresDate: string, now: Da
   ${routes}`;
 }
 
-function operatorActions(operator: ApiRecord | null | undefined): string {
+function operatorActions(operator: OrganisationApiResponse | undefined): string {
   if (!operator) return "";
   const logo = hasCalmacBrand(String(operator.name)) ? `<img class="operator-logo" src="/assets/calmac-logo.png" alt="" aria-hidden="true">` : "";
   const links = [
-    operator.local_number ? `<a class="button" href="tel:${escapeAttribute(String(operator.local_number).split(" ").join("-"))}">Phone</a>` : "",
-    operator.website ? `<a class="button" href="${escapeAttribute(operator.website)}" target="_blank" rel="noreferrer">Website</a>` : "",
-    operator.email ? `<a class="button" href="mailto:${escapeAttribute(operator.email)}">Email</a>` : "",
-    operator.x ? `<a class="button" href="${escapeAttribute(operator.x)}" target="_blank" rel="noreferrer">X</a>` : "",
-    operator.facebook ? `<a class="button" href="${escapeAttribute(operator.facebook)}" target="_blank" rel="noreferrer">Facebook</a>` : ""
+    buttonLink(operator.local_number ? `tel:${String(operator.local_number).split(" ").join("-")}` : undefined, "Phone"),
+    buttonLink(operator.website, "Website", { target: "_blank", rel: "noreferrer" }),
+    buttonLink(operator.email ? `mailto:${operator.email}` : undefined, "Email"),
+    buttonLink(operator.x, "X", { target: "_blank", rel: "noreferrer" }),
+    buttonLink(operator.facebook, "Facebook", { target: "_blank", rel: "noreferrer" })
   ].join("");
 
   return `<div class="panel-divider"></div>
@@ -328,7 +391,7 @@ function operatorActions(operator: ApiRecord | null | undefined): string {
   <div class="inline-buttons">${links}</div>`;
 }
 
-function reliabilitySummary(service: ApiRecord): string {
+function reliabilitySummary(service: PageService): string {
   const period = service.reliability?.status_breakdown?.last_30_days;
   if (!period || Number(period.observed_operating_days) === 0) return "";
   const disrupted = Number(period.day_statuses?.disrupted?.days ?? 0);
@@ -338,13 +401,13 @@ function reliabilitySummary(service: ApiRecord): string {
   </p>`;
 }
 
-export function renderServicePage(service: ApiRecord, departuresDate: string, now: Date): string {
+export function renderServicePage(service: PageService, departuresDate: string, now: Date): string {
   const status = statusName(service.status);
   const hasAdditionalInfo = Boolean(String(service.additional_info ?? "").trim());
   const detailsLink = hasAdditionalInfo
     ? `<p style="margin-bottom: 0"><a href="/service/${encodeURIComponent(String(service.service_id))}/info">View disruption details</a></p>`
     : "";
-  const content = `<section class="panel service-summary">
+  const content = panel(`
     <h1 class="title" style="margin-bottom: 0; font-size: 1.1rem">${escapeHtml(service.area)}</h1>
     <div class="muted" style="margin-bottom: 12px">${escapeHtml(service.route)}</div>
     <div class="status-inline status-text status-${status}">
@@ -360,23 +423,21 @@ export function renderServicePage(service: ApiRecord, departuresDate: string, no
     ${locationSummary(service)}
     ${scheduledDepartures(service, departuresDate, now)}
     ${operatorActions(service.operator)}
-  </section>`;
+  `, "service-summary");
 
   return layout(`${service.area} - Scottish Ferries`, pageChrome(content));
 }
 
-export function renderAdditionalInfoPage(service: ApiRecord): string {
+export function renderAdditionalInfoPage(service: PageService): string {
   const content = `<div class="header">
     <h1 class="title">${escapeHtml(service.area)} Info</h1>
   </div>
-  <section class="panel">
-    ${String(service.additional_info ?? "")}
-  </section>`;
+  ${panel(String(service.additional_info ?? ""))}`;
   return layout(`${service.area} Info - Scottish Ferries`, pageChrome(content));
 }
 
 export function renderNotFoundPage(message = "Page not found"): string {
-  return layout("Not Found - Scottish Ferries", pageChrome(`<section class="panel"><h1 class="title">Not Found</h1><p>${escapeHtml(message)}</p></section>`));
+  return layout("Not Found - Scottish Ferries", pageChrome(panel(`<h1 class="title">Not Found</h1><p>${escapeHtml(message)}</p>`)));
 }
 
 export function renderPrivacyPolicyPage(): string {
