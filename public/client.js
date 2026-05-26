@@ -10,6 +10,10 @@
   }
 
   var googleMapsApiLoadPromise = null;
+  var vesselBaseIconPromise = null;
+  var rotatedVesselIconCache = {};
+  var VESSEL_ICON_SIZE = 28;
+  var VESSEL_ICON_RENDER_MULTIPLIER = 2;
   var DARK_MAP_STYLES = [
     { elementType: "geometry", stylers: [{ color: "#1f2a37" }] },
     { elementType: "labels.text.stroke", stylers: [{ color: "#1f2a37" }] },
@@ -77,16 +81,64 @@
     return googleMapsApiLoadPromise;
   }
 
-  function vesselIcon(googleMaps, point) {
-    return {
-      path: googleMaps.SymbolPath.FORWARD_CLOSED_ARROW,
-      fillColor: "#0b72e7",
-      fillOpacity: 0.95,
-      strokeColor: "#ffffff",
-      strokeWeight: 1.4,
-      scale: 5,
-      rotation: Number.isFinite(point.course) ? point.course : 0
-    };
+  function normalizeCourse(course) {
+    return course == null || !Number.isFinite(course) ? 0 : ((course % 360) + 360) % 360;
+  }
+
+  function getVesselBaseIcon() {
+    if (vesselBaseIconPromise) {
+      return vesselBaseIconPromise;
+    }
+
+    vesselBaseIconPromise = new Promise(function (resolve, reject) {
+      var image = new Image();
+      image.onload = function () {
+        resolve(image);
+      };
+      image.onerror = function () {
+        reject(new Error("Failed to load vessel icon."));
+      };
+      image.src = "/assets/ferry.png";
+    });
+
+    return vesselBaseIconPromise;
+  }
+
+  function getRotatedVesselIcon(googleMaps, course) {
+    var heading = Math.round(normalizeCourse(course));
+    if (rotatedVesselIconCache[heading]) {
+      return Promise.resolve({
+        url: rotatedVesselIconCache[heading],
+        scaledSize: new googleMaps.Size(VESSEL_ICON_SIZE, VESSEL_ICON_SIZE),
+        anchor: new googleMaps.Point(VESSEL_ICON_SIZE / 2, VESSEL_ICON_SIZE / 2)
+      });
+    }
+
+    return getVesselBaseIcon().then(function (baseImage) {
+      var targetSize = VESSEL_ICON_SIZE * VESSEL_ICON_RENDER_MULTIPLIER;
+      var canvas = document.createElement("canvas");
+      var context = canvas.getContext("2d");
+
+      canvas.width = targetSize;
+      canvas.height = targetSize;
+      if (!context) {
+        throw new Error("Could not get canvas context for vessel icon.");
+      }
+
+      context.translate(targetSize / 2, targetSize / 2);
+      context.rotate((heading * Math.PI) / 180);
+      var scale = Math.min(targetSize / baseImage.naturalWidth, targetSize / baseImage.naturalHeight);
+      var width = baseImage.naturalWidth * scale;
+      var height = baseImage.naturalHeight * scale;
+      context.drawImage(baseImage, -width / 2, -height / 2, width, height);
+
+      rotatedVesselIconCache[heading] = canvas.toDataURL("image/png");
+      return {
+        url: rotatedVesselIconCache[heading],
+        scaledSize: new googleMaps.Size(VESSEL_ICON_SIZE, VESSEL_ICON_SIZE),
+        anchor: new googleMaps.Point(VESSEL_ICON_SIZE / 2, VESSEL_ICON_SIZE / 2)
+      };
+    });
   }
 
   function locationIcon(googleMaps) {
@@ -127,34 +179,42 @@
       var bounds = new googleMaps.LatLngBounds();
       var infoWindow = new googleMaps.InfoWindow();
 
-      points.forEach(function (point) {
-        var marker = new googleMaps.Marker({
-          position: { lat: point.latitude, lng: point.longitude },
-          map: map,
-          title: point.label,
-          icon: point.type === "vessel" ? vesselIcon(googleMaps, point) : locationIcon(googleMaps)
-        });
+      var markerPromises = points.map(function (point) {
+        var iconPromise = point.type === "vessel"
+          ? getRotatedVesselIcon(googleMaps, point.course)
+          : Promise.resolve(locationIcon(googleMaps));
 
-        bounds.extend(marker.getPosition());
-        marker.addListener("click", function () {
-          if (point.type === "vessel") {
-            var speed = point.speed == null ? "Unknown speed" : Number(point.speed).toFixed(1) + " knots";
-            infoWindow.setContent(
-              '<div class="map-popup"><div class="map-popup-title">' + escapeHtml(point.label) + '</div><div class="map-popup-meta">' + escapeHtml(speed) + ' <span class="map-popup-dot">&bull;</span> ' + escapeHtml(formatRelativeTime(point.lastReceived)) + "</div></div>"
-            );
-          } else {
-            infoWindow.setContent('<div class="map-popup"><div class="map-popup-title">' + escapeHtml(point.label) + "</div></div>");
-          }
-          infoWindow.open({ anchor: marker, map: map });
+        return iconPromise.then(function (icon) {
+          var marker = new googleMaps.Marker({
+            position: { lat: point.latitude, lng: point.longitude },
+            map: map,
+            title: point.label,
+            icon: icon
+          });
+
+          bounds.extend(marker.getPosition());
+          marker.addListener("click", function () {
+            if (point.type === "vessel") {
+              var speed = point.speed == null ? "Unknown speed" : Number(point.speed).toFixed(1) + " knots";
+              infoWindow.setContent(
+                '<div class="map-popup"><div class="map-popup-title">' + escapeHtml(point.label) + '</div><div class="map-popup-meta">' + escapeHtml(speed) + ' <span class="map-popup-dot">&bull;</span> ' + escapeHtml(formatRelativeTime(point.lastReceived)) + "</div></div>"
+              );
+            } else {
+              infoWindow.setContent('<div class="map-popup"><div class="map-popup-title">' + escapeHtml(point.label) + "</div></div>");
+            }
+            infoWindow.open({ anchor: marker, map: map });
+          });
         });
       });
 
-      if (points.length === 1) {
-        map.setCenter(bounds.getCenter());
-        map.setZoom(10);
-      } else if (points.length > 1) {
-        map.fitBounds(bounds, 24);
-      }
+      Promise.all(markerPromises).then(function () {
+        if (points.length === 1) {
+          map.setCenter(bounds.getCenter());
+          map.setZoom(10);
+        } else if (points.length > 1) {
+          map.fitBounds(bounds, 24);
+        }
+      });
     }).catch(function () {
       mount.innerHTML = '<div class="map-missing-key">Could not load Google Maps.</div>';
     });
