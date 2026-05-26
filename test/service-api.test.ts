@@ -33,6 +33,8 @@ describe("Service API responses", () => {
     const detailResponse = await app.inject({ method: "GET", url: "/service/1?departuresDate=2026-05-25" });
     assert.equal(detailResponse.statusCode, 200);
     assert.match(detailResponse.headers["content-type"] as string, /text\/html/);
+    assert.match(detailResponse.body, /panel-map-bleed/);
+    assert.match(detailResponse.body, /map-shell/);
     assert.match(detailResponse.body, /Locations/);
     assert.match(detailResponse.body, /Caledonian MacBrayne/);
   });

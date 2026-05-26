@@ -15,6 +15,7 @@ const envSchema = Type.Object({
   TRUST_PROXY: Type.Optional(Type.Boolean()),
   DATABASE_PATH: Type.Optional(Type.String({ minLength: 1 })),
   OPENWEATHERMAP_APPID: Type.Optional(Type.String()),
+  GOOGLE_MAPS_API_KEY: Type.Optional(Type.String()),
   AIS_STREAM_API_KEY: Type.Optional(Type.String()),
   RAIL_DATA_API_KEY: Type.Optional(Type.String()),
   TRAVELLINE_FTP_ADDRESS: Type.Optional(Type.String()),
@@ -73,6 +74,7 @@ const env = Value.Parse(envSchema, {
   TRUST_PROXY: parseOptionalBoolean(process.env.TRUST_PROXY),
   DATABASE_PATH: process.env.DATABASE_PATH,
   OPENWEATHERMAP_APPID: process.env.OPENWEATHERMAP_APPID,
+  GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY ?? process.env.VITE_GOOGLE_MAPS_API_KEY,
   AIS_STREAM_API_KEY: process.env.AIS_STREAM_API_KEY,
   RAIL_DATA_API_KEY: process.env.RAIL_DATA_API_KEY,
   TRAVELLINE_FTP_ADDRESS: process.env.TRAVELLINE_FTP_ADDRESS,
@@ -103,6 +105,7 @@ export const config = {
   trustProxy: env.TRUST_PROXY ?? ((env.NODE_ENV ?? "development") === "production"),
   databasePath: env.DATABASE_PATH ?? "./data/ferry-services.sqlite3",
   openWeatherMapAppId: env.OPENWEATHERMAP_APPID ?? null,
+  googleMapsApiKey: env.GOOGLE_MAPS_API_KEY ?? null,
   aisStreamApiKey: env.AIS_STREAM_API_KEY ?? null,
   railDataApiKey: env.RAIL_DATA_API_KEY ?? null,
   travelineFtp: {

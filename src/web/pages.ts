@@ -1,3 +1,5 @@
+import { config } from "../config.js";
+
 type ApiRecord = Record<string, any>;
 
 const statusNames = ["normal", "disrupted", "cancelled"] as const;
@@ -13,6 +15,15 @@ function escapeHtml(value: unknown): string {
 
 function escapeAttribute(value: unknown): string {
   return escapeHtml(value).replaceAll("`", "&#96;");
+}
+
+function escapeJsonForScript(value: unknown): string {
+  return JSON.stringify(value)
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e")
+    .replaceAll("&", "\\u0026")
+    .replaceAll("\u2028", "\\u2028")
+    .replaceAll("\u2029", "\\u2029");
 }
 
 function statusName(status: unknown): string {
@@ -87,6 +98,10 @@ function hasCalmacBrand(name: string): boolean {
 }
 
 function layout(title: string, body: string): string {
+  const ferryConfig = escapeJsonForScript({
+    googleMapsApiKey: config.googleMapsApiKey
+  });
+
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -95,6 +110,7 @@ function layout(title: string, body: string): string {
     <title>${escapeHtml(title)}</title>
     <link rel="icon" href="/favicon.ico">
     <link rel="stylesheet" href="/styles.css">
+    <script>window.__FERRY_CONFIG__=${ferryConfig};</script>
     <script src="/client.js" defer></script>
   </head>
   <body>
@@ -214,6 +230,44 @@ function locationSummary(service: ApiRecord): string {
   </div>`;
 }
 
+function serviceMap(service: ApiRecord): string {
+  const locationPoints = ((service.locations ?? []) as ApiRecord[])
+    .filter((location) => Number.isFinite(location.latitude) && Number.isFinite(location.longitude))
+    .map((location) => ({
+      latitude: location.latitude,
+      longitude: location.longitude,
+      label: String(location.name ?? "Location"),
+      type: "location"
+    }));
+  const vesselPoints = ((service.vessels ?? []) as ApiRecord[])
+    .filter((vessel) => Number.isFinite(vessel.latitude) && Number.isFinite(vessel.longitude))
+    .map((vessel) => ({
+      latitude: vessel.latitude,
+      longitude: vessel.longitude,
+      label: String(vessel.name ?? "Vessel"),
+      type: "vessel",
+      speed: Number.isFinite(vessel.speed) ? vessel.speed : null,
+      course: Number.isFinite(vessel.course) ? vessel.course : null,
+      lastReceived: vessel.last_received ?? null
+    }));
+  const points = [...locationPoints, ...vesselPoints];
+  const serviceArea = String(service.area ?? "service");
+
+  if (!config.googleMapsApiKey) {
+    return `<div class="panel-map-bleed">
+      <div class="map-shell">
+        <div class="map-missing-key">Google Maps requires an API key. Set <code>GOOGLE_MAPS_API_KEY</code> to render location and vessel markers for ${escapeHtml(serviceArea)}.</div>
+      </div>
+    </div>`;
+  }
+
+  return `<div class="panel-map-bleed">
+    <div class="map-shell">
+      <div class="map-mount" data-service-map data-points="${escapeAttribute(escapeJsonForScript(points))}" aria-label="${escapeAttribute(serviceArea)} map"></div>
+    </div>
+  </div>`;
+}
+
 function scheduledDepartures(service: ApiRecord, departuresDate: string, now: Date): string {
   if (!service.scheduled_departures_available) return "";
 
@@ -302,6 +356,7 @@ export function renderServicePage(service: ApiRecord, departuresDate: string, no
     <p class="small muted" style="margin-bottom: 0">Last updated: ${escapeHtml(formatDateTime(service.last_updated_date ?? service.updated))}</p>
     ${reliabilitySummary(service)}
     ${detailsLink}
+    ${serviceMap(service)}
     ${locationSummary(service)}
     ${scheduledDepartures(service, departuresDate, now)}
     ${operatorActions(service.operator)}
