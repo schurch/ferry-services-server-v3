@@ -1,7 +1,5 @@
 node_modules/
 dist/
-apps/*/dist/
-apps/api/public/
 /offline/
 .env
 secrets/

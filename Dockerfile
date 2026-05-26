@@ -13,8 +13,6 @@ RUN apt-get update \
 RUN npm install -g npm@${NPM_VERSION}
 
 COPY package.json package-lock.json ./
-COPY apps/api/package.json ./apps/api/package.json
-COPY apps/web/package.json ./apps/web/package.json
 RUN npm ci
 
 
@@ -22,9 +20,10 @@ FROM deps AS build
 
 WORKDIR /app
 
-COPY apps/api ./apps/api
-COPY apps/web ./apps/web
-COPY scripts ./scripts
+COPY src ./src
+COPY sqlite ./sqlite
+COPY public ./public
+COPY tsconfig.json ./
 
 RUN npm run build
 
@@ -41,7 +40,7 @@ FROM node:26-bookworm-slim
 
 ARG NPM_VERSION
 
-WORKDIR /app/apps/api
+WORKDIR /app
 
 ENV NODE_ENV=production
 
@@ -51,12 +50,10 @@ RUN apt-get update \
 
 RUN npm install -g npm@${NPM_VERSION}
 
-COPY package.json /app/package.json
-COPY apps/api/package.json /app/apps/api/package.json
-COPY apps/web/package.json /app/apps/web/package.json
-COPY --from=deps-prod /app/node_modules /app/node_modules
-COPY --from=build /app/apps/api/dist ./dist
-COPY --from=build /app/apps/api/sqlite ./sqlite
-COPY --from=build /app/apps/api/public ./public
+COPY package.json ./
+COPY --from=deps-prod /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/sqlite ./sqlite
+COPY --from=build /app/public ./public
 
 CMD ["npm", "run", "start"]

@@ -48,6 +48,15 @@ import {
 } from "./schema.js";
 import { serviceToApi, timetableDocumentToApi } from "./wire.js";
 import { MemoryRateLimiter } from "./rate-limit.js";
+import {
+  dateInput,
+  isDateInput,
+  renderAdditionalInfoPage,
+  renderNotFoundPage,
+  renderPrivacyPolicyPage,
+  renderServicePage,
+  renderServicesPage
+} from "../web/pages.js";
 
 const publicDir = path.resolve("public");
 const INSTALLATION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
@@ -258,6 +267,82 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       hide: true
     }
   }, async () => app.swagger());
+
+  app.get("/", {
+    schema: {
+      hide: true,
+      response: {
+        200: Type.String()
+      }
+    }
+  }, async (_request, reply) => {
+    const services = listServices(db).map((service) => serviceToApi(service, {
+      includeAdditionalInfo: false,
+      includeLocationDetails: false,
+      includeVessels: false
+    }));
+    return reply.type("text/html").send(renderServicesPage(services));
+  });
+
+  app.get("/service/:serviceID", {
+    schema: {
+      hide: true,
+      params: ServiceIDParams,
+      querystring: ServiceDetailQuery,
+      response: {
+        200: Type.String(),
+        404: Type.String()
+      }
+    }
+  }, async (request, reply) => {
+    const { serviceID } = request.params as { serviceID: number };
+    const { departuresDate } = request.query as { departuresDate?: string };
+    const currentTime = now();
+    const queryDate = isDateInput(departuresDate) ? departuresDate : dateInput(currentTime);
+    const service = getService(db, serviceID, queryDate, currentTime);
+    if (!service) {
+      return reply.code(404).type("text/html").send(renderNotFoundPage("Service not found"));
+    }
+
+    return reply.type("text/html").send(renderServicePage(serviceToApi(service), queryDate, currentTime));
+  });
+
+  app.get("/service/:serviceID/info", {
+    schema: {
+      hide: true,
+      params: ServiceIDParams,
+      response: {
+        200: Type.String(),
+        404: Type.String()
+      }
+    }
+  }, async (request, reply) => {
+    const { serviceID } = request.params as { serviceID: number };
+    const service = getService(db, serviceID, undefined, now());
+    if (!service || !service.additionalInfo?.trim()) {
+      return reply.code(404).type("text/html").send(renderNotFoundPage("Service information not found"));
+    }
+
+    return reply.type("text/html").send(renderAdditionalInfoPage(serviceToApi(service)));
+  });
+
+  app.get("/privacy-policy", {
+    schema: {
+      hide: true,
+      response: {
+        200: Type.String()
+      }
+    }
+  }, async (_request, reply) => reply.type("text/html").send(renderPrivacyPolicyPage()));
+
+  app.get("/privacy-policy.html", {
+    schema: {
+      hide: true,
+      response: {
+        200: Type.String()
+      }
+    }
+  }, async (_request, reply) => reply.type("text/html").send(renderPrivacyPolicyPage()));
 
   app.get("/api/services", {
     schema: {
@@ -616,22 +701,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
 
     return reply.type("application/vnd.sqlite3").send(fs.createReadStream(defaultSnapshotPath));
-  });
-
-  app.get("/", {
-    schema: {
-      hide: true,
-      response: {
-        200: Type.Any(),
-        404: errorResponse("Web dist has not been published")
-      }
-    }
-  }, async (_request, reply) => {
-    if (fs.existsSync(path.join(publicDir, "index.html"))) {
-      return reply.sendFile("index.html", { maxAge: 0, immutable: false });
-    }
-
-    return reply.code(404).send({ error: "Not Found", message: "Web dist has not been published to public/" });
   });
 
   if (sentryEnabled) {

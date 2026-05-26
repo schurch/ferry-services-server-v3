@@ -15,6 +15,28 @@ afterEach(async () => {
 });
 
 describe("Service API responses", () => {
+  it("serves server-rendered public pages", async () => {
+    currentDb = createTestDatabase();
+    currentApp = await buildApp({
+      db: currentDb.db,
+      now: () => new Date("2026-05-25T12:00:00Z")
+    });
+    const app = currentApp;
+    assert.notEqual(app, null);
+
+    const listResponse = await app.inject({ method: "GET", url: "/" });
+    assert.equal(listResponse.statusCode, 200);
+    assert.match(listResponse.headers["content-type"] as string, /text\/html/);
+    assert.match(listResponse.body, /Scottish Ferries/);
+    assert.match(listResponse.body, /Search by area or route/);
+
+    const detailResponse = await app.inject({ method: "GET", url: "/service/1?departuresDate=2026-05-25" });
+    assert.equal(detailResponse.statusCode, 200);
+    assert.match(detailResponse.headers["content-type"] as string, /text\/html/);
+    assert.match(detailResponse.body, /Locations/);
+    assert.match(detailResponse.body, /Caledonian MacBrayne/);
+  });
+
   it("includes full operator contact details in list and detail responses", async () => {
     currentDb = createTestDatabase();
     currentApp = await buildApp({ db: currentDb.db });

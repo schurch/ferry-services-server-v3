@@ -1,38 +1,33 @@
 # ferry-services
 
-Monorepo for the Scottish Ferry Services API, background jobs and web frontend.
+Scottish Ferries server, public web pages, API, background jobs, SQLite migrations and offline snapshot generation.
 
 ## Project Layout
 
 ```text
 ferry-services/
-  apps/
-    api/          Fastify API, background jobs, SQLite migrations, OpenAPI
-    web/          React/Vite frontend
-  scripts/        deployment and repository automation
+  src/            Fastify routes, HTML pages, API, DB access, jobs and push code
+  public/         Static web assets served by Fastify
+  sqlite/         SQLite migrations and seed data
+  test/           Node test runner tests
+  scripts/        deployment and database backup/restore helpers
   compose.yaml    production services
-  Dockerfile      single production image for API, jobs and built web assets
+  Dockerfile      single production image for web, API and jobs
 ```
 
-The API remains the production entry point. The web app builds into static assets that are copied into `apps/api/public/` during the root build, then served by Fastify from the same container and origin as the API.
+Fastify is the only runtime entry point. It serves server-rendered HTML pages and the JSON API from the same process.
 
 ## Local Setup
 
 ```bash
 npm ci
-cp apps/api/.env.example .env
+cp .env.example .env
 npm run build
 npm run migrate
-npm run dev:api
+npm run dev
 ```
 
-Run the frontend dev server separately when working on the web app:
-
-```bash
-npm run dev:web
-```
-
-Useful root checks:
+Useful checks:
 
 ```bash
 npm run typecheck
@@ -40,25 +35,23 @@ npm test
 npm run build
 ```
 
-The root scripts run the relevant workspace scripts. API tests use isolated temporary SQLite databases seeded from `apps/api/sqlite/migrations/001_initial.sql` and `apps/api/sqlite/seed.sql`.
+Tests use isolated temporary SQLite databases seeded from `sqlite/migrations/001_initial.sql` and `sqlite/seed.sql`.
 
 ## Runtime Model
 
-The production image contains:
-
-- the compiled API and job code from `apps/api`
-- the built frontend from `apps/web`
-- production Node dependencies only
-
-The API serves:
+The server serves:
 
 ```text
+/                  public service list
+/service/:id        public service detail
+/service/:id/info   public disruption details
+/privacy-policy     privacy policy
+/api/...            JSON API for native apps and other clients
 /openapi.json
 /swagger
-/
 ```
 
-Scheduled work runs as dedicated long-running Docker services that repeatedly invoke the API workspace jobs:
+Scheduled work runs as dedicated long-running Docker services that repeatedly invoke the same package scripts:
 
 ```bash
 npm run scrape
@@ -77,21 +70,18 @@ TransXChange ingest requires `TRAVELLINE_FTP_ADDRESS`, `TRAVELLINE_FTP_USERNAME`
 
 ## Configuration
 
-For local API work, copy `apps/api/.env.example` to `.env` at the repository root.
-
-Production keeps runtime state and secrets on the host:
+Runtime state and secrets live at the repository root:
 
 ```text
-/home/stefan/ferry-services-server-v3/
-  .env
-  data/
-    ferry-services.sqlite3
-  offline/
-    snapshot.sqlite3
-    snapshot.meta.json
-  secrets/
-    AuthKey_....p8
-    google-service-account.json
+.env
+data/
+  ferry-services.sqlite3
+offline/
+  snapshot.sqlite3
+  snapshot.meta.json
+secrets/
+  AuthKey_....p8
+  google-service-account.json
 ```
 
 Core runtime variables:
@@ -131,8 +121,6 @@ For Docker deployments, also set:
 APP_UID=1000
 APP_GID=1000
 ```
-
-The API loads `.env` from the repository root in both local workspace runs and Docker. Compose mounts `data/`, `offline/` and `secrets/` from the repository root into `/app/apps/api/` inside each container. That keeps state easy to inspect on the host while preserving the API workspace's relative paths.
 
 ## Deployment
 
@@ -175,32 +163,3 @@ APP_ROOT=/home/stefan/ferry-services-server-v3 scripts/restore-prod-db.sh data/b
 ```
 
 That stops the compose stack, snapshots the current live DB to a `*.pre-restore-<timestamp>.sqlite3` file next to it, restores the chosen backup, removes any stale SQLite WAL/SHM sidecars, and starts the stack again.
-
-The GitHub Actions deploy job expects:
-
-```text
-TAILSCALE_AUTHKEY
-DOCKERHUB_USERNAME
-DOCKERHUB_TOKEN
-```
-
-Optional overrides:
-
-```text
-DEPLOY_HOST # defaults to server
-DEPLOY_USER # defaults to stefan
-```
-
-The stack contains:
-
-- `api`
-- `scraper`
-- `weather-fetcher`
-- `vessel-fetcher`
-- `rail-fetcher`
-- `timetable-document-fetcher`
-- `transxchange-ingester`
-
-## Shared Code Direction
-
-The clean long-term shared boundary is the API contract, not the whole domain model. When the web app starts consuming generated clients, add a package such as `packages/api-client/` sourced from the API's OpenAPI output and let both apps depend on that package. Keep UI code, database code and job internals private to their apps.
