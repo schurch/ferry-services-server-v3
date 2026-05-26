@@ -112,7 +112,7 @@ type ReliabilityStatusCounts = Record<ReliabilityStatusKey, number>;
 type ReliabilityDailyStatus = {
   date: string;
   status: ReliabilityStatusKey;
-  sailings: number;
+  scheduledSailings: number;
 };
 
 export type LocationDepartureRow = {
@@ -1321,29 +1321,21 @@ export function listLocationDepartureRows(db: Database.Database, serviceId: numb
   return rows;
 }
 
-function latestStatusByDate(
+function worstStatusByDate(
   db: Database.Database,
   serviceId: number,
   start: string,
   end: string
 ): Map<string, ServiceStatus> {
   const rows = db.prepare(`
-    WITH ranked_observations AS (
-      SELECT
-        date(observed_at) AS observed_date,
-        status,
-        ROW_NUMBER() OVER (
-          PARTITION BY date(observed_at)
-          ORDER BY observed_at DESC, observation_id DESC
-        ) AS rank
-      FROM service_status_observations
-      WHERE service_id = ?
-        AND datetime(observed_at) >= datetime(?)
-        AND datetime(observed_at) < datetime(?)
-    )
-    SELECT observed_date, status
-    FROM ranked_observations
-    WHERE rank = 1
+    SELECT
+      date(observed_at) AS observed_date,
+      MAX(status) AS status
+    FROM service_status_observations
+    WHERE service_id = ?
+      AND datetime(observed_at) >= datetime(?)
+      AND datetime(observed_at) < datetime(?)
+    GROUP BY date(observed_at)
   `).all(serviceId, start, end) as Array<{ observed_date: string; status: ServiceStatus }>;
 
   return new Map(rows.map((row) => [row.observed_date, row.status]));
@@ -1355,7 +1347,7 @@ function reliabilityDailyStatuses(
   start: Date,
   end: Date
 ): ReliabilityDailyStatus[] {
-  const statusByDate = latestStatusByDate(db, serviceId, sqlTimestamp(start), sqlTimestamp(end));
+  const statusByDate = worstStatusByDate(db, serviceId, sqlTimestamp(start), sqlTimestamp(end));
   const statuses: ReliabilityDailyStatus[] = [];
 
   for (let current = new Date(start); current < end; current = addUtcDays(current, 1)) {
@@ -1368,7 +1360,7 @@ function reliabilityDailyStatuses(
     statuses.push({
       date: queryDate,
       status,
-      sailings: listLocationDepartureRows(db, serviceId, queryDate).length
+      scheduledSailings: listLocationDepartureRows(db, serviceId, queryDate).length
     });
   }
 
@@ -1382,7 +1374,8 @@ function reliabilityPeriodResponse(
   dailyStatuses: ReliabilityDailyStatus[]
 ): ReliabilityPeriodResponse {
   const counts = emptyReliabilityCounts();
-  let totalSailings = 0;
+  let totalDays = 0;
+  let scheduledSailings = 0;
   const startDay = dateString(startDate);
   const endDay = dateString(endDate);
 
@@ -1390,28 +1383,33 @@ function reliabilityPeriodResponse(
     if (dailyStatus.date < startDay || dailyStatus.date >= endDay) {
       continue;
     }
+    if (dailyStatus.scheduledSailings === 0) {
+      continue;
+    }
 
-    counts[dailyStatus.status] += dailyStatus.sailings;
-    totalSailings += dailyStatus.sailings;
+    counts[dailyStatus.status] += 1;
+    totalDays += 1;
+    scheduledSailings += dailyStatus.scheduledSailings;
   }
 
   return {
     period,
     start: startDate.toISOString(),
     end: endDate.toISOString(),
-    totalSailings,
-    statuses: {
+    observedOperatingDays: totalDays,
+    scheduledSailings,
+    dayStatuses: {
       normal: {
-        count: counts.normal,
-        percentage: roundedPercentage(counts.normal, totalSailings)
+        days: counts.normal,
+        percentage: roundedPercentage(counts.normal, totalDays)
       },
       disrupted: {
-        count: counts.disrupted,
-        percentage: roundedPercentage(counts.disrupted, totalSailings)
+        days: counts.disrupted,
+        percentage: roundedPercentage(counts.disrupted, totalDays)
       },
       cancelled: {
-        count: counts.cancelled,
-        percentage: roundedPercentage(counts.cancelled, totalSailings)
+        days: counts.cancelled,
+        percentage: roundedPercentage(counts.cancelled, totalDays)
       }
     }
   };
@@ -1627,7 +1625,12 @@ export function listServices(db: Database.Database): ServiceResponse[] {
   return rows.map((row) => serviceResponse(row, lookups, now));
 }
 
-export function getService(db: Database.Database, serviceId: number, departuresDate?: string): ServiceResponse | null {
+export function getService(
+  db: Database.Database,
+  serviceId: number,
+  departuresDate?: string,
+  now = new Date()
+): ServiceResponse | null {
   const row = db.prepare(`
     SELECT service_id, area, route, status, additional_info, disruption_reason, organisation_id, last_updated_date, updated
     FROM services
@@ -1638,7 +1641,6 @@ export function getService(db: Database.Database, serviceId: number, departuresD
     return null;
   }
 
-  const now = new Date();
   const queryDate = parseDateString(departuresDate, now);
   const locationDepartures = createLocationDepartureLookup(db, serviceId, queryDate);
   const nextDepartures = createLocationDepartureLookup(db, serviceId, dateString(now));

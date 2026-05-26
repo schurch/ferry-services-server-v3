@@ -105,7 +105,7 @@ export type TimetableDocumentResponse = {
 export type ReliabilityStatusKey = "normal" | "disrupted" | "cancelled";
 
 export type ReliabilityStatusBreakdownEntry = {
-  count: number;
+  days: number;
   percentage: number;
 };
 
@@ -113,8 +113,9 @@ export type ReliabilityPeriodResponse = {
   period: "last_7_days" | "last_30_days";
   start: string;
   end: string;
-  totalSailings: number;
-  statuses: Record<ReliabilityStatusKey, ReliabilityStatusBreakdownEntry>;
+  observedOperatingDays: number;
+  scheduledSailings: number;
+  dayStatuses: Record<ReliabilityStatusKey, ReliabilityStatusBreakdownEntry>;
 };
 
 export type ReliabilityResponse = {

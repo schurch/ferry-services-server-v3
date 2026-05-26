@@ -51,8 +51,9 @@ describe("Service API responses", () => {
       reliability?: {
         status_breakdown: Record<string, {
           period: string;
-          total_sailings: number;
-          statuses: Record<string, { count: number; percentage: number }>;
+          observed_operating_days: number;
+          scheduled_sailings: number;
+          day_statuses: Record<string, { days: number; percentage: number }>;
         }>;
       };
     };
@@ -63,22 +64,24 @@ describe("Service API responses", () => {
           period: "last_7_days",
           start: "2026-05-19T00:00:00.000Z",
           end: "2026-05-26T00:00:00.000Z",
-          total_sailings: 2,
-          statuses: {
-            normal: { count: 0, percentage: 0 },
-            disrupted: { count: 1, percentage: 50 },
-            cancelled: { count: 1, percentage: 50 }
+          observed_operating_days: 2,
+          scheduled_sailings: 4,
+          day_statuses: {
+            normal: { days: 0, percentage: 0 },
+            disrupted: { days: 1, percentage: 50 },
+            cancelled: { days: 1, percentage: 50 }
           }
         },
         last_30_days: {
           period: "last_30_days",
           start: "2026-04-26T00:00:00.000Z",
           end: "2026-05-26T00:00:00.000Z",
-          total_sailings: 2,
-          statuses: {
-            normal: { count: 0, percentage: 0 },
-            disrupted: { count: 1, percentage: 50 },
-            cancelled: { count: 1, percentage: 50 }
+          observed_operating_days: 2,
+          scheduled_sailings: 4,
+          day_statuses: {
+            normal: { days: 0, percentage: 0 },
+            disrupted: { days: 1, percentage: 50 },
+            cancelled: { days: 1, percentage: 50 }
           }
         }
       }
@@ -115,7 +118,9 @@ describe("Service API responses", () => {
       required: ["last_7_days", "last_30_days"],
       description: "Rolling reliability breakdowns for this service, keyed by period to prevent duplicate ranges."
     });
-    assert.notEqual(schemas.ReliabilityPeriodResponse?.properties?.total_sailings, undefined);
+    assert.notEqual(schemas.ReliabilityPeriodResponse?.properties?.observed_operating_days, undefined);
+    assert.notEqual(schemas.ReliabilityPeriodResponse?.properties?.scheduled_sailings, undefined);
+    assert.notEqual(schemas.ReliabilityPeriodResponse?.properties?.day_statuses, undefined);
     assert.notEqual(schemas.ReliabilityStatusBreakdownEntry?.properties?.percentage, undefined);
   });
 });
@@ -241,27 +246,45 @@ function seedReliabilityFixture(testDb: TestDatabase): void {
       departure_time,
       note,
       note_code
-    ) VALUES (
-      1,
-      'VJ1',
-      'CALM_CM5',
-      'LINE1',
-      'JP1',
-      'CALMAC',
-      '08:00:00',
-      '',
-      ''
-    );
+    ) VALUES
+      (
+        1,
+        'VJ1',
+        'CALM_CM5',
+        'LINE1',
+        'JP1',
+        'CALMAC',
+        '08:00:00',
+        '',
+        ''
+      ),
+      (
+        1,
+        'VJ2',
+        'CALM_CM5',
+        'LINE1',
+        'JP1',
+        'CALMAC',
+        '12:00:00',
+        '',
+        ''
+      );
 
     INSERT INTO transxchange_vehicle_journey_days (
       document_id,
       vehicle_journey_code,
       day_rule
-    ) VALUES (
-      1,
-      'VJ1',
-      'monday_to_sunday'
-    );
+    ) VALUES
+      (
+        1,
+        'VJ1',
+        'monday_to_sunday'
+      ),
+      (
+        1,
+        'VJ2',
+        'monday_to_sunday'
+      );
 
     INSERT INTO service_scrape_runs (
       scrape_run_id,
@@ -283,6 +306,7 @@ function seedReliabilityFixture(testDb: TestDatabase): void {
       status
     ) VALUES
       (1, 1, 5, '2026-05-24 09:00:00', 1),
-      (2, 2, 5, '2026-05-25 09:00:00', 2);
+      (2, 2, 5, '2026-05-25 09:00:00', 2),
+      (3, 2, 5, '2026-05-25 17:00:00', 0);
   `);
 }

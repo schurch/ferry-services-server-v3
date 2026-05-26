@@ -27,8 +27,9 @@ export type ReliabilityPeriod = {
   period: "last_7_days" | "last_30_days";
   start: string;
   end: string;
-  totalSailings: number;
-  statuses: {
+  observedOperatingDays: number;
+  scheduledSailings: number;
+  dayStatuses: {
     normal: ReliabilityStatusEntry;
     disrupted: ReliabilityStatusEntry;
     cancelled: ReliabilityStatusEntry;
@@ -36,7 +37,7 @@ export type ReliabilityPeriod = {
 };
 
 export type ReliabilityStatusEntry = {
-  count: number;
+  days: number;
   percentage: number;
 };
 
@@ -127,8 +128,9 @@ export type ApiReliabilityPeriod = {
   period: "last_7_days" | "last_30_days";
   start: string;
   end: string;
-  total_sailings: number;
-  statuses: {
+  observed_operating_days: number;
+  scheduled_sailings: number;
+  day_statuses: {
     normal: ApiReliabilityStatusEntry;
     disrupted: ApiReliabilityStatusEntry;
     cancelled: ApiReliabilityStatusEntry;
@@ -136,7 +138,7 @@ export type ApiReliabilityPeriod = {
 };
 
 export type ApiReliabilityStatusEntry = {
-  count: number;
+  days: number;
   percentage: number;
 };
 

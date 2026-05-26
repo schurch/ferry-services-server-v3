@@ -301,7 +301,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }, async (request, reply) => {
     const { serviceID } = request.params as { serviceID: number };
     const { departuresDate } = request.query as { departuresDate?: string };
-    const service = getService(db, serviceID, departuresDate);
+    const service = getService(db, serviceID, departuresDate, now());
     return service
       ? serviceToApi(service)
       : reply.code(404).send({ error: "Not Found", message: "Service not found" });

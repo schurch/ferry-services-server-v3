@@ -127,11 +127,12 @@ function reliabilityPeriodToApi(period: ReliabilityPeriodResponse): Record<strin
     period: period.period,
     start: period.start,
     end: period.end,
-    total_sailings: period.totalSailings,
-    statuses: {
-      normal: period.statuses.normal,
-      disrupted: period.statuses.disrupted,
-      cancelled: period.statuses.cancelled
+    observed_operating_days: period.observedOperatingDays,
+    scheduled_sailings: period.scheduledSailings,
+    day_statuses: {
+      normal: period.dayStatuses.normal,
+      disrupted: period.dayStatuses.disrupted,
+      cancelled: period.dayStatuses.cancelled
     }
   };
 }

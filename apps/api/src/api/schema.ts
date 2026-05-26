@@ -131,14 +131,14 @@ export const TimetableDocumentResponseSchema = Type.Object({
 }, { $id: "TimetableDocumentResponse" });
 
 export const ReliabilityStatusBreakdownEntrySchema = Type.Object({
-  count: Type.Integer({
+  days: Type.Integer({
     minimum: 0,
-    description: "Number of scheduled sailings whose latest observed service status for that day matched this category."
+    description: "Number of observed operating days whose worst observed service status matched this category."
   }),
   percentage: Type.Number({
     minimum: 0,
     maximum: 100,
-    description: "Percentage of scheduled sailings in the period represented by this status category, rounded to one decimal place."
+    description: "Percentage of observed operating days in the period represented by this status category, rounded to one decimal place."
   })
 }, { $id: "ReliabilityStatusBreakdownEntry" });
 
@@ -149,15 +149,19 @@ export const ReliabilityPeriodResponseSchema = Type.Object({
   ], { description: "Rolling reliability window." }),
   start: Type.Ref(UTCTimeSchema, { description: "Inclusive UTC start of the reliability window." }),
   end: Type.Ref(UTCTimeSchema, { description: "Exclusive UTC end of the reliability window." }),
-  total_sailings: Type.Integer({
+  observed_operating_days: Type.Integer({
     minimum: 0,
-    description: "Total scheduled sailings in the period that had an observed service status."
+    description: "Total operating days in the period that had an observed service status."
   }),
-  statuses: Type.Object({
+  scheduled_sailings: Type.Integer({
+    minimum: 0,
+    description: "Total scheduled sailings across the observed operating days in the period. Reliability percentages are based on days, not this sailing count."
+  }),
+  day_statuses: Type.Object({
     normal: Type.Ref(ReliabilityStatusBreakdownEntrySchema),
     disrupted: Type.Ref(ReliabilityStatusBreakdownEntrySchema),
     cancelled: Type.Ref(ReliabilityStatusBreakdownEntrySchema)
-  }, { description: "Breakdown of scheduled sailings by latest observed daily service status." })
+  }, { description: "Breakdown of observed operating days by worst observed daily service status." })
 }, { $id: "ReliabilityPeriodResponse" });
 
 export const ReliabilityResponseSchema = Type.Object({

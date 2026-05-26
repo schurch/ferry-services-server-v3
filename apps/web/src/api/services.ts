@@ -13,8 +13,9 @@ function toReliabilityPeriod(period: ApiReliabilityPeriod): ReliabilityPeriod {
     period: period.period,
     start: period.start,
     end: period.end,
-    totalSailings: period.total_sailings,
-    statuses: period.statuses
+    observedOperatingDays: period.observed_operating_days,
+    scheduledSailings: period.scheduled_sailings,
+    dayStatuses: period.day_statuses
   };
 }
 
