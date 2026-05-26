@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   finishServiceScrapeRun,
+  saveServiceReliabilityDays,
   saveServiceStatusObservations,
   startServiceScrapeRun
 } from "../src/db/fetchers.js";
@@ -164,6 +165,38 @@ describe("service status observations", () => {
         WHERE scrape_run_id = ?
       `).get(scrapeRunId) as { count: number };
       assert.equal(count.count, 0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("captures one reliability summary per service day", () => {
+    const { db, cleanup } = createTestDatabase();
+    try {
+      saveServiceReliabilityDays(db, [
+        { serviceId: 5, status: 0, scheduledSailings: 4 },
+        { serviceId: 6, status: -99, scheduledSailings: 2 }
+      ], "2026-05-20 08:00:00");
+      saveServiceReliabilityDays(db, [
+        { serviceId: 5, status: 2, scheduledSailings: 3 }
+      ], "2026-05-20 17:00:00");
+
+      const rows = db.prepare(`
+        SELECT service_id, observed_date, status, scheduled_sailings, first_observed_at, last_observed_at
+        FROM service_reliability_days
+        ORDER BY service_id
+      `).all() as Array<Record<string, unknown>>;
+
+      assert.deepEqual(rows, [
+        {
+          service_id: 5,
+          observed_date: "2026-05-20",
+          status: 2,
+          scheduled_sailings: 4,
+          first_observed_at: "2026-05-20 08:00:00",
+          last_observed_at: "2026-05-20 17:00:00"
+        }
+      ]);
     } finally {
       cleanup();
     }

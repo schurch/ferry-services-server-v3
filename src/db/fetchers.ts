@@ -8,6 +8,10 @@ function nowSql(): string {
   return new Date().toISOString().replace("T", " ").slice(0, 19);
 }
 
+function dateString(value: string): string {
+  return value.slice(0, 10);
+}
+
 // #endregion
 
 // #region Public API
@@ -328,6 +332,54 @@ export function saveServiceStatusObservations(
           index
         );
       });
+    }
+  });
+
+  transaction(services);
+}
+
+export function saveServiceReliabilityDays(
+  db: Database.Database,
+  services: Array<{
+    serviceId: number;
+    status: ServiceStatus;
+    scheduledSailings: number;
+  }>,
+  observedAt = nowSql()
+): void {
+  const observedDate = dateString(observedAt);
+  const save = db.prepare(`
+    INSERT INTO service_reliability_days (
+      service_id,
+      observed_date,
+      status,
+      scheduled_sailings,
+      first_observed_at,
+      last_observed_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT (service_id, observed_date) DO UPDATE
+      SET status = max(service_reliability_days.status, excluded.status),
+          scheduled_sailings = max(service_reliability_days.scheduled_sailings, excluded.scheduled_sailings),
+          first_observed_at = min(service_reliability_days.first_observed_at, excluded.first_observed_at),
+          last_observed_at = max(service_reliability_days.last_observed_at, excluded.last_observed_at),
+          updated_at = CURRENT_TIMESTAMP
+  `);
+
+  const transaction = db.transaction((items: typeof services) => {
+    for (const service of items) {
+      if (service.status !== 0 && service.status !== 1 && service.status !== 2) {
+        continue;
+      }
+
+      save.run(
+        service.serviceId,
+        observedDate,
+        service.status,
+        service.scheduledSailings,
+        observedAt,
+        observedAt
+      );
     }
   });
 

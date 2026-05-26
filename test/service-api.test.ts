@@ -88,24 +88,24 @@ describe("Service API responses", () => {
           period: "last_7_days",
           start: "2026-05-19T00:00:00.000Z",
           end: "2026-05-26T00:00:00.000Z",
-          observed_operating_days: 2,
-          scheduled_sailings: 4,
+          observed_operating_days: 3,
+          scheduled_sailings: 7,
           day_statuses: {
-            normal: { days: 0, percentage: 0 },
-            disrupted: { days: 1, percentage: 50 },
-            cancelled: { days: 1, percentage: 50 }
+            normal: { days: 1, percentage: 33.3 },
+            disrupted: { days: 1, percentage: 33.3 },
+            cancelled: { days: 1, percentage: 33.3 }
           }
         },
         last_30_days: {
           period: "last_30_days",
           start: "2026-04-26T00:00:00.000Z",
           end: "2026-05-26T00:00:00.000Z",
-          observed_operating_days: 2,
-          scheduled_sailings: 4,
+          observed_operating_days: 3,
+          scheduled_sailings: 7,
           day_statuses: {
-            normal: { days: 0, percentage: 0 },
-            disrupted: { days: 1, percentage: 50 },
-            cancelled: { days: 1, percentage: 50 }
+            normal: { days: 1, percentage: 33.3 },
+            disrupted: { days: 1, percentage: 33.3 },
+            cancelled: { days: 1, percentage: 33.3 }
           }
         }
       }
@@ -200,7 +200,7 @@ function seedReliabilityFixture(testDb: TestDatabase): void {
       'Ardrossan - Brodick',
       'Ardrossan',
       'Brodick',
-      '2026-01-01',
+      '2026-05-25',
       '2026-12-31'
     );
 
@@ -319,8 +319,9 @@ function seedReliabilityFixture(testDb: TestDatabase): void {
       completed_at,
       success
     ) VALUES
-      (1, 'CalMac', 1, 'fixture', '2026-05-24 08:00:00', '2026-05-24 08:05:00', 1),
-      (2, 'CalMac', 1, 'fixture', '2026-05-25 08:00:00', '2026-05-25 08:05:00', 1);
+      (1, 'CalMac', 1, 'fixture', '2026-05-20 08:00:00', '2026-05-20 08:05:00', 1),
+      (2, 'CalMac', 1, 'fixture', '2026-05-24 08:00:00', '2026-05-24 08:05:00', 1),
+      (3, 'CalMac', 1, 'fixture', '2026-05-25 08:00:00', '2026-05-25 08:05:00', 1);
 
     INSERT INTO service_status_observations (
       observation_id,
@@ -329,8 +330,21 @@ function seedReliabilityFixture(testDb: TestDatabase): void {
       observed_at,
       status
     ) VALUES
-      (1, 1, 5, '2026-05-24 09:00:00', 1),
-      (2, 2, 5, '2026-05-25 09:00:00', 2),
-      (3, 2, 5, '2026-05-25 17:00:00', 0);
+      (1, 1, 5, '2026-05-20 09:00:00', 0),
+      (2, 2, 5, '2026-05-24 09:00:00', 1),
+      (3, 3, 5, '2026-05-25 09:00:00', 2),
+      (4, 3, 5, '2026-05-25 17:00:00', 0);
+
+    INSERT INTO service_reliability_days (
+      service_id,
+      observed_date,
+      status,
+      scheduled_sailings,
+      first_observed_at,
+      last_observed_at
+    ) VALUES
+      (5, '2026-05-20', 0, 3, '2026-05-20 09:00:00', '2026-05-20 09:00:00'),
+      (5, '2026-05-24', 1, 2, '2026-05-24 09:00:00', '2026-05-24 09:00:00'),
+      (5, '2026-05-25', 2, 2, '2026-05-25 09:00:00', '2026-05-25 17:00:00');
   `);
 }

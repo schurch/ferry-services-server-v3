@@ -6,10 +6,12 @@ import {
   hideServices,
   listServicesById,
   listServiceIdsForOrganisation,
+  saveServiceReliabilityDays,
   saveServices,
   saveServiceStatusObservations,
   startServiceScrapeRun
 } from "../db/fetchers.js";
+import { listLocationDepartureRows } from "../db/api.js";
 import { openDatabase } from "../db/database.js";
 import { notifyForServiceStatusChanges } from "../push/notifications.js";
 import { logger } from "../logger.js";
@@ -103,6 +105,10 @@ const calMacServiceIds = new Map<string, number>([
 
 function nowSql(): string {
   return new Date().toISOString().replace("T", " ").slice(0, 19);
+}
+
+function dateString(value: string): string {
+  return value.slice(0, 10);
 }
 
 function text(value: string): string {
@@ -460,9 +466,16 @@ async function main(): Promise<void> {
       try {
         logger.info({ operator: scraper.name }, "Fetching services");
         const services = await scraper.scrape();
+        const observedAt = nowSql();
+        const observedDate = dateString(observedAt);
         const oldServices = listServicesById(db, services.map((service) => service.serviceId));
         saveServices(db, services);
-        saveServiceStatusObservations(db, scrapeRunId, services);
+        saveServiceStatusObservations(db, scrapeRunId, services, observedAt);
+        saveServiceReliabilityDays(db, services.map((service) => ({
+          serviceId: service.serviceId,
+          status: service.status,
+          scheduledSailings: listLocationDepartureRows(db, service.serviceId, observedDate).length
+        })), observedAt);
         scraper.afterSave?.(services);
         await notifyForServiceStatusChanges(db, services, oldServices);
         finishServiceScrapeRun(db, scrapeRunId, { success: true });

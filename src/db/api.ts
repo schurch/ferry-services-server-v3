@@ -117,6 +117,12 @@ type ReliabilityDailyStatus = {
   scheduledSailings: number;
 };
 
+type ReliabilityDayRow = {
+  observed_date: string;
+  status: ServiceStatus;
+  scheduled_sailings: number;
+};
+
 export type LocationDepartureRow = {
   from_location_id: number;
   to_location_id: number;
@@ -1359,24 +1365,24 @@ export function listLocationDepartureRows(db: Database.Database, serviceId: numb
 
 // #region Reliability queries
 
-function worstStatusByDate(
+function reliabilityDaysByDate(
   db: Database.Database,
   serviceId: number,
   start: string,
   end: string
-): Map<string, ServiceStatus> {
+): Map<string, ReliabilityDayRow> {
   const rows = db.prepare(`
     SELECT
-      date(observed_at) AS observed_date,
-      MAX(status) AS status
-    FROM service_status_observations
+      observed_date,
+      status,
+      scheduled_sailings
+    FROM service_reliability_days
     WHERE service_id = ?
-      AND datetime(observed_at) >= datetime(?)
-      AND datetime(observed_at) < datetime(?)
-    GROUP BY date(observed_at)
-  `).all(serviceId, start, end) as Array<{ observed_date: string; status: ServiceStatus }>;
+      AND observed_date >= date(?)
+      AND observed_date < date(?)
+  `).all(serviceId, start, end) as ReliabilityDayRow[];
 
-  return new Map(rows.map((row) => [row.observed_date, row.status]));
+  return new Map(rows.map((row) => [row.observed_date, row]));
 }
 
 function reliabilityDailyStatuses(
@@ -1385,12 +1391,18 @@ function reliabilityDailyStatuses(
   start: Date,
   end: Date
 ): ReliabilityDailyStatus[] {
-  const statusByDate = worstStatusByDate(db, serviceId, sqlTimestamp(start), sqlTimestamp(end));
+  const startTimestamp = sqlTimestamp(start);
+  const endTimestamp = sqlTimestamp(end);
+  const reliabilityDayByDate = reliabilityDaysByDate(db, serviceId, startTimestamp, endTimestamp);
   const statuses: ReliabilityDailyStatus[] = [];
 
   for (let current = new Date(start); current < end; current = addUtcDays(current, 1)) {
     const queryDate = dateString(current);
-    const status = reliabilityStatusKey(statusByDate.get(queryDate) ?? -99);
+    const reliabilityDay = reliabilityDayByDate.get(queryDate);
+    if (reliabilityDay === undefined) {
+      continue;
+    }
+    const status = reliabilityStatusKey(reliabilityDay.status);
     if (status === undefined) {
       continue;
     }
@@ -1398,7 +1410,7 @@ function reliabilityDailyStatuses(
     statuses.push({
       date: queryDate,
       status,
-      scheduledSailings: listLocationDepartureRows(db, serviceId, queryDate).length
+      scheduledSailings: reliabilityDay.scheduled_sailings
     });
   }
 

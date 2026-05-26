@@ -157,7 +157,7 @@ export const ReliabilityPeriodResponseSchema = Type.Object({
   }),
   scheduled_sailings: Type.Integer({
     minimum: 0,
-    description: "Total scheduled sailings across the observed operating days in the period. Reliability percentages are based on days, not this sailing count."
+    description: "Total scheduled sailings captured at scrape time across the observed operating days in the period. Reliability percentages are based on days, not this sailing count."
   }),
   day_statuses: Type.Object({
     normal: Type.Ref(ReliabilityStatusBreakdownEntrySchema),
