@@ -75,7 +75,7 @@ export type VesselVoyageResponse = {
   originLocation: LocationReferenceResponse;
   destinationLocation: LocationReferenceResponse;
   departedAt: string;
-  eta?: string;
+  estimatedArrival?: string;
   progress?: number;
 };
 
@@ -112,7 +112,6 @@ export type ReliabilityStatusBreakdownEntry = {
 };
 
 export type ReliabilityPeriodResponse = {
-  period: "last_7_days" | "last_30_days";
   start: string;
   end: string;
   observedOperatingDays: number;

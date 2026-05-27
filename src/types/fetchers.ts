@@ -24,7 +24,6 @@ export type VesselPosition = {
   longitude: number;
   lastReceived: string;
   destinationName?: string | undefined;
-  eta?: string | undefined;
   originName?: string | undefined;
   originDepartedAt?: string | undefined;
   organisationId: number;

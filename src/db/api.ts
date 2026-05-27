@@ -72,12 +72,12 @@ type VesselRow = {
   longitude: number;
   last_received: string;
   destination_name: Nullable<string>;
-  eta: Nullable<string>;
   origin_name: Nullable<string>;
   origin_departed_at: Nullable<string>;
 };
 
 type ScheduledVoyage = {
+  departure: string;
   arrival: string;
 };
 
@@ -312,25 +312,35 @@ function vesselVoyageResponse(row: VesselRow, serviceLocations: LocationResponse
     return undefined;
   }
 
-  const eta = voyageEta(serviceLocations, originLocation, destinationLocation, row, now);
+  const estimatedArrival = voyageEstimatedArrival(serviceLocations, originLocation, destinationLocation, row, now);
   const progress = computeProgress(originLocation, destinationLocation, row.latitude, row.longitude);
   return {
     originLocation,
     destinationLocation,
     departedAt,
-    ...(eta !== undefined ? { eta } : {}),
+    ...(estimatedArrival !== undefined ? { estimatedArrival } : {}),
     ...(progress !== undefined ? { progress } : {})
   };
 }
 
-function voyageEta(
+function voyageEstimatedArrival(
   serviceLocations: LocationResponse[],
   originLocation: LocationReferenceResponse,
   destinationLocation: LocationReferenceResponse,
   row: VesselRow,
   now: Date
 ): string | undefined {
-  return matchedScheduledVoyage(serviceLocations, originLocation, destinationLocation, row, now)?.arrival;
+  const matched = matchedScheduledVoyage(serviceLocations, originLocation, destinationLocation, row, now);
+  if (matched === undefined || row.origin_departed_at === null) {
+    return undefined;
+  }
+
+  const scheduledDurationMs = new Date(matched.arrival).getTime() - new Date(matched.departure).getTime();
+  if (!Number.isFinite(scheduledDurationMs) || scheduledDurationMs <= 0) {
+    return undefined;
+  }
+
+  return new Date(parseSqlTimestamp(row.origin_departed_at).getTime() + scheduledDurationMs).toISOString();
 }
 
 function matchedScheduledVoyage(
@@ -353,6 +363,7 @@ function matchedScheduledVoyage(
   const candidates = origin.scheduledDepartures
     .filter((departure) => departure.destination.id === destinationLocation.id)
     .map((departure) => ({
+      departure: departure.departure,
       arrival: departure.arrival,
       arrivalMs: new Date(departure.arrival).getTime(),
       departureMs: new Date(departure.departure).getTime()
@@ -367,6 +378,7 @@ function matchedScheduledVoyage(
   const candidate = candidates[0];
   return candidate
     ? {
+        departure: candidate.departure,
         arrival: candidate.arrival
       }
     : undefined;
@@ -374,7 +386,7 @@ function matchedScheduledVoyage(
 
 function isCompletedVoyage(row: VesselRow, voyage: VesselVoyageResponse, now: Date): boolean {
   const graceMs = 10 * 60 * 1000;
-  if (voyage.eta && now.getTime() - new Date(voyage.eta).getTime() > graceMs) {
+  if (voyage.estimatedArrival && now.getTime() - new Date(voyage.estimatedArrival).getTime() > graceMs) {
     return true;
   }
   if (distanceKm(row, voyage.destinationLocation) <= completionRadiusKm(voyage)) {
@@ -846,7 +858,6 @@ function createSingleServiceVesselLookup(db: Database.Database, serviceId: numbe
       v.longitude,
       v.last_received,
       v.destination_name,
-      v.eta,
       v.origin_name,
       v.origin_departed_at
     FROM vessels v
@@ -1418,7 +1429,6 @@ function reliabilityDailyStatuses(
 }
 
 function reliabilityPeriodResponse(
-  period: ReliabilityPeriodResponse["period"],
   startDate: Date,
   endDate: Date,
   dailyStatuses: ReliabilityDailyStatus[]
@@ -1443,7 +1453,6 @@ function reliabilityPeriodResponse(
   }
 
   return {
-    period,
     start: startDate.toISOString(),
     end: endDate.toISOString(),
     observedOperatingDays: totalDays,
@@ -1473,8 +1482,8 @@ function createServiceReliability(db: Database.Database, serviceId: number, now:
 
   return {
     statusBreakdown: {
-      last7Days: reliabilityPeriodResponse("last_7_days", sevenDayStartDate, endDate, dailyStatuses),
-      last30Days: reliabilityPeriodResponse("last_30_days", thirtyDayStartDate, endDate, dailyStatuses)
+      last7Days: reliabilityPeriodResponse(sevenDayStartDate, endDate, dailyStatuses),
+      last30Days: reliabilityPeriodResponse(thirtyDayStartDate, endDate, dailyStatuses)
     }
   };
 }

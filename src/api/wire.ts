@@ -104,14 +104,13 @@ function vesselVoyageToApi(voyage: NonNullable<VesselResponse["voyage"]>): Vesse
     origin_location: locationReferenceToApi(voyage.originLocation),
     destination_location: locationReferenceToApi(voyage.destinationLocation),
     departed_at: voyage.departedAt,
-    ...(voyage.eta !== undefined ? { eta: voyage.eta } : {}),
+    ...(voyage.estimatedArrival !== undefined ? { estimated_arrival: voyage.estimatedArrival } : {}),
     ...(voyage.progress !== undefined ? { progress: voyage.progress } : {})
   };
 }
 
 function reliabilityPeriodToApi(period: ReliabilityPeriodResponse): ReliabilityPeriodApiResponse {
   return {
-    period: period.period,
     start: period.start,
     end: period.end,
     observed_operating_days: period.observedOperatingDays,

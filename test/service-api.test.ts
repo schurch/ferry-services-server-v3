@@ -74,7 +74,6 @@ describe("Service API responses", () => {
     const detail = response.json() as {
       reliability?: {
         status_breakdown: Record<string, {
-          period: string;
           observed_operating_days: number;
           scheduled_sailings: number;
           day_statuses: Record<string, { days: number; percentage: number }>;
@@ -85,7 +84,6 @@ describe("Service API responses", () => {
     assert.deepEqual(detail.reliability, {
       status_breakdown: {
         last_7_days: {
-          period: "last_7_days",
           start: "2026-05-19T00:00:00.000Z",
           end: "2026-05-26T00:00:00.000Z",
           observed_operating_days: 3,
@@ -97,7 +95,6 @@ describe("Service API responses", () => {
           }
         },
         last_30_days: {
-          period: "last_30_days",
           start: "2026-04-26T00:00:00.000Z",
           end: "2026-05-26T00:00:00.000Z",
           observed_operating_days: 3,
@@ -145,7 +142,10 @@ describe("Service API responses", () => {
     assert.notEqual(schemas.ReliabilityPeriodResponse?.properties?.observed_operating_days, undefined);
     assert.notEqual(schemas.ReliabilityPeriodResponse?.properties?.scheduled_sailings, undefined);
     assert.notEqual(schemas.ReliabilityPeriodResponse?.properties?.day_statuses, undefined);
+    assert.equal(schemas.ReliabilityPeriodResponse?.properties?.period, undefined);
     assert.notEqual(schemas.ReliabilityStatusBreakdownEntry?.properties?.percentage, undefined);
+    assert.notEqual(schemas.VesselVoyageResponse?.properties?.estimated_arrival, undefined);
+    assert.equal(schemas.VesselVoyageResponse?.properties?.eta, undefined);
   });
 });
 

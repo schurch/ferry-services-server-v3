@@ -58,7 +58,7 @@ describe("vessel persistence", () => {
     });
   });
 
-  it("does not carry a stale ETA into a newly detected voyage", () => {
+  it("does not carry stale arrival metadata into a newly detected voyage", () => {
     currentDb = createTestDatabase();
     const db = currentDb.db;
     const terminals = [
@@ -71,7 +71,6 @@ describe("vessel persistence", () => {
       longitude: -4.823062,
       lastReceived: "2026-05-24 08:40:00",
       destinationName: "Brodick",
-      eta: "2026-05-23 20:30:00",
       originName: "Ardrossan"
     }));
 
@@ -82,13 +81,12 @@ describe("vessel persistence", () => {
       receivedAt: "2026-05-24 08:48:08"
     }), {
       destinationName: "Brodick",
-      eta: undefined,
       originName: "Ardrossan",
       originDepartedAt: "2026-05-24 08:48:08"
     });
   });
 
-  it("uses reported destination but ignores reported ETA for a newly detected voyage", () => {
+  it("uses reported destination for a newly detected voyage", () => {
     currentDb = createTestDatabase();
     const db = currentDb.db;
     const terminals = [
@@ -101,7 +99,6 @@ describe("vessel persistence", () => {
       longitude: -4.823062,
       lastReceived: "2026-05-24 08:40:00",
       destinationName: "Brodick",
-      eta: "2026-05-23 20:30:00",
       originName: "Ardrossan"
     }));
 
@@ -113,7 +110,6 @@ describe("vessel persistence", () => {
       receivedAt: "2026-05-24 08:48:08"
     }), {
       destinationName: "Brodick",
-      eta: undefined,
       originName: "Ardrossan",
       originDepartedAt: "2026-05-24 08:48:08"
     });
@@ -143,7 +139,6 @@ describe("vessel persistence", () => {
       receivedAt: "2026-05-24 08:48:08"
     }), {
       destinationName: "Brodick",
-      eta: undefined,
       originName: "Ardrossan",
       originDepartedAt: "2026-05-24 08:48:08"
     });
@@ -175,7 +170,6 @@ describe("vessel persistence", () => {
       receivedAt: "2026-05-24 08:48:08"
     }), {
       destinationName: "Brodick",
-      eta: undefined,
       originName: "Ardrossan",
       originDepartedAt: "2026-05-24 08:48:08"
     });
@@ -197,12 +191,11 @@ describe("vessel persistence", () => {
       receivedAt: "2026-05-24 08:40:00"
     }), {
       destinationName: "Brodick",
-      eta: undefined,
       originName: "Ardrossan"
     });
   });
 
-  it("does not carry a stale ETA while a vessel is at a terminal", () => {
+  it("does not carry stale voyage metadata while a vessel is at a terminal", () => {
     currentDb = createTestDatabase();
     const db = currentDb.db;
     const terminals = [
@@ -215,7 +208,6 @@ describe("vessel persistence", () => {
       longitude: -4.823062,
       lastReceived: "2026-05-24 08:40:00",
       destinationName: "Brodick",
-      eta: "2026-05-24 08:30:00",
       originName: "Ardrossan"
     }));
 
@@ -226,7 +218,6 @@ describe("vessel persistence", () => {
       receivedAt: "2026-05-24 08:48:08"
     }), {
       destinationName: "Brodick",
-      eta: undefined,
       originName: "Ardrossan"
     });
   });
@@ -255,7 +246,6 @@ describe("vessel persistence", () => {
       receivedAt: "2026-05-24 08:48:08"
     }), {
       destinationName: undefined,
-      eta: undefined,
       originName: "Ardrossan"
     });
   });
@@ -284,7 +274,6 @@ describe("vessel persistence", () => {
       receivedAt: "2026-05-24 08:48:08"
     }), {
       destinationName: "Brodick",
-      eta: undefined,
       originName: "Ardrossan",
       originDepartedAt: "2026-05-24 08:35:00"
     });

@@ -1,0 +1,1 @@
+ALTER TABLE vessels DROP COLUMN eta;

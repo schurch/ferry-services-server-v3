@@ -28,7 +28,6 @@ type AisStreamMessage = {
 };
 
 type MarineTrafficVessel = {
-  SHIP_ID?: unknown;
   MMSI?: unknown;
   SHIPNAME?: unknown;
   LAT?: unknown;
@@ -36,10 +35,6 @@ type MarineTrafficVessel = {
   SPEED?: unknown;
   COURSE?: unknown;
   TIMESTAMP?: unknown;
-};
-
-type MarineTrafficVoyage = {
-  reportedDestination?: unknown;
 };
 
 type VesselFetchResult = {
@@ -540,7 +535,7 @@ export function enrichVoyage(
   terminals: TerminalReference[],
   organisationId: number,
   position: PositionUpdate
-): Pick<VesselPosition, "originName" | "originDepartedAt" | "destinationName" | "eta"> {
+): Pick<VesselPosition, "originName" | "originDepartedAt" | "destinationName"> {
   const previous = previousVesselPosition(db, position.mmsi);
   const previousTerminal = previous ? nearestTerminal(terminals, organisationId, previous) : undefined;
   const currentTerminal = nearestTerminal(terminals, organisationId, position);
@@ -548,7 +543,6 @@ export function enrichVoyage(
   if (currentTerminal) {
     return {
       destinationName: destinationAtTerminal(terminals, organisationId, currentTerminal, position, previous?.destinationName),
-      eta: undefined,
       originName: currentTerminal.name
     };
   }
@@ -557,7 +551,6 @@ export function enrichVoyage(
     const originDepartedAt = position.receivedAt;
     return {
       destinationName: destinationForPosition(terminals, organisationId, position, previousTerminal, undefined),
-      eta: undefined,
       originName: previousTerminal.name,
       originDepartedAt
     };
@@ -567,7 +560,6 @@ export function enrichVoyage(
     const origin = originFromName(terminals, organisationId, previous.originName);
     return {
       destinationName: destinationForPosition(terminals, organisationId, position, origin, previous.destinationName),
-      eta: undefined,
       originName: previous.originName,
       originDepartedAt: previous.originDepartedAt
     };
@@ -755,7 +747,7 @@ function isCloudflareChallenge(status: number, contentType: string | null, body:
   return status === 403 && contentType?.includes("text/html") === true && body.includes("Attention Required! | Cloudflare");
 }
 
-function marineTrafficPosition(value: MarineTrafficVessel): { position: PositionUpdate; name?: string | undefined; shipId?: number | undefined } | null {
+function marineTrafficPosition(value: MarineTrafficVessel): { position: PositionUpdate; name?: string | undefined } | null {
   const mmsi = parseInteger(value.MMSI);
   const latitude = parseNumber(value.LAT);
   const longitude = parseNumber(value.LON);
@@ -774,8 +766,7 @@ function marineTrafficPosition(value: MarineTrafficVessel): { position: Position
       course: parseNumber(value.COURSE),
       receivedAt: timestamp
     },
-    name: name ? capitaliseWords(name) : undefined,
-    shipId: parseInteger(value.SHIP_ID)
+    name: name ? capitaliseWords(name) : undefined
   };
 }
 
@@ -806,48 +797,13 @@ async function fetchMarineTrafficVessel(
       return null;
     }
 
-    const voyage = await fetchMarineTrafficVoyageData(client, headers, parsed.shipId);
     return {
-      position: {
-        ...parsed.position,
-        ...voyage
-      },
+      position: parsed.position,
       name: parsed.name
     };
   } catch (error) {
     logger.warn({ err: error, mmsi }, "Skipping vessel because MarineTraffic fetch failed");
     return null;
-  }
-}
-
-async function fetchMarineTrafficVoyageData(
-  client: MarineTrafficClient,
-  headers: MarineTrafficHeaders,
-  shipId: number | undefined
-): Promise<Pick<PositionUpdate, "destinationName">> {
-  if (shipId === undefined) {
-    return {};
-  }
-
-  try {
-    const response = await client.get(
-      `https://www.marinetraffic.com/en/vessels/${shipId}/voyage`,
-      marineTrafficRequestOptions(headers)
-    );
-    const body = await response.text();
-    if (response.status < 200 || response.status >= 300) {
-      logger.warn({ shipId, statusCode: response.status }, "Skipping voyage enrichment because MarineTraffic returned an error");
-      return {};
-    }
-
-    const voyage = JSON.parse(body) as MarineTrafficVoyage;
-    const rawDestination = parseText(voyage.reportedDestination);
-    return {
-      destinationName: rawDestination ? cleanVesselText(rawDestination) : undefined
-    };
-  } catch (error) {
-    logger.warn({ err: error, shipId }, "Skipping voyage enrichment because MarineTraffic fetch failed");
-    return {};
   }
 }
 
@@ -919,10 +875,7 @@ async function main(): Promise<void> {
         runMarineTrafficPollLoop(client, db, terminals, vesselOrganisations, vesselNames)
       ]);
     } else {
-      const completed = await fetchVesselsFromMarineTraffic(client, db, terminals, vesselOrganisations, vesselNames);
-      if (!completed) {
-        process.exitCode = 1;
-      }
+      await runMarineTrafficPollLoop(client, db, terminals, vesselOrganisations, vesselNames);
     }
   } finally {
     await client.exit();

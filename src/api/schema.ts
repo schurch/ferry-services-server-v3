@@ -103,7 +103,7 @@ export const VesselVoyageResponseSchema = Type.Object({
   origin_location: Type.Ref(DepartureDestinationSchema),
   destination_location: Type.Ref(DepartureDestinationSchema),
   departed_at: Type.Ref(UTCTimeSchema),
-  eta: Type.Optional(Type.Ref(UTCTimeSchema)),
+  estimated_arrival: Type.Optional(Type.Ref(UTCTimeSchema)),
   progress: Type.Optional(Type.Number({ minimum: 0, maximum: 1 }))
 }, { $id: "VesselVoyageResponse" });
 
@@ -145,10 +145,6 @@ export const ReliabilityStatusBreakdownEntrySchema = Type.Object({
 }, { $id: "ReliabilityStatusBreakdownEntry" });
 
 export const ReliabilityPeriodResponseSchema = Type.Object({
-  period: Type.Union([
-    Type.Literal("last_7_days"),
-    Type.Literal("last_30_days")
-  ], { description: "Rolling reliability window." }),
   start: Type.Ref(UTCTimeSchema, { description: "Inclusive UTC start of the reliability window." }),
   end: Type.Ref(UTCTimeSchema, { description: "Exclusive UTC end of the reliability window." }),
   observed_operating_days: Type.Integer({

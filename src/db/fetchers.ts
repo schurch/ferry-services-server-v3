@@ -49,13 +49,12 @@ export function saveVessel(db: Database.Database, vessel: VesselPosition): void 
       longitude,
       last_received,
       destination_name,
-      eta,
       origin_name,
       origin_departed_at,
       updated,
       organisation_id
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
     ON CONFLICT (mmsi) DO UPDATE
       SET name = excluded.name,
           speed = excluded.speed,
@@ -64,7 +63,6 @@ export function saveVessel(db: Database.Database, vessel: VesselPosition): void 
           longitude = excluded.longitude,
           last_received = excluded.last_received,
           destination_name = excluded.destination_name,
-          eta = excluded.eta,
           origin_name = excluded.origin_name,
           origin_departed_at = excluded.origin_departed_at,
           updated = excluded.updated,
@@ -79,7 +77,6 @@ export function saveVessel(db: Database.Database, vessel: VesselPosition): void 
     vessel.longitude,
     vessel.lastReceived,
     vessel.destinationName ?? null,
-    vessel.eta ?? null,
     vessel.originName ?? null,
     vessel.originDepartedAt ?? null,
     vessel.organisationId
