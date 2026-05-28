@@ -79,6 +79,7 @@ type VesselRow = {
 type ScheduledVoyage = {
   departure: string;
   arrival: string;
+  durationMs: number;
 };
 
 type RailDepartureRow = {
@@ -312,7 +313,12 @@ function vesselVoyageResponse(row: VesselRow, serviceLocations: LocationResponse
     return undefined;
   }
 
-  const estimatedArrival = voyageEstimatedArrival(serviceLocations, originLocation, destinationLocation, row, now);
+  const matchedVoyage = matchedScheduledVoyage(serviceLocations, originLocation, destinationLocation, row, now);
+  if (!hasFreshVoyagePosition(row, originLocation, destinationLocation, matchedVoyage, now)) {
+    return undefined;
+  }
+
+  const estimatedArrival = voyageEstimatedArrival(matchedVoyage, row);
   const progress = computeProgress(originLocation, destinationLocation, row.latitude, row.longitude);
   return {
     originLocation,
@@ -324,23 +330,14 @@ function vesselVoyageResponse(row: VesselRow, serviceLocations: LocationResponse
 }
 
 function voyageEstimatedArrival(
-  serviceLocations: LocationResponse[],
-  originLocation: LocationReferenceResponse,
-  destinationLocation: LocationReferenceResponse,
+  matched: ScheduledVoyage | undefined,
   row: VesselRow,
-  now: Date
 ): string | undefined {
-  const matched = matchedScheduledVoyage(serviceLocations, originLocation, destinationLocation, row, now);
   if (matched === undefined || row.origin_departed_at === null) {
     return undefined;
   }
 
-  const scheduledDurationMs = new Date(matched.arrival).getTime() - new Date(matched.departure).getTime();
-  if (!Number.isFinite(scheduledDurationMs) || scheduledDurationMs <= 0) {
-    return undefined;
-  }
-
-  return new Date(parseSqlTimestamp(row.origin_departed_at).getTime() + scheduledDurationMs).toISOString();
+  return new Date(parseSqlTimestamp(row.origin_departed_at).getTime() + matched.durationMs).toISOString();
 }
 
 function matchedScheduledVoyage(
@@ -357,7 +354,6 @@ function matchedScheduledVoyage(
 
   const departedAtMs = parseSqlTimestamp(row.origin_departed_at ?? row.last_received).getTime();
   const lastReceivedMs = parseSqlTimestamp(row.last_received).getTime();
-  const maxDepartureMs = lastReceivedMs + (15 * 60 * 1000);
   const minArrivalMs = now.getTime() - (10 * 60 * 1000);
 
   const candidates = origin.scheduledDepartures
@@ -368,20 +364,58 @@ function matchedScheduledVoyage(
       arrivalMs: new Date(departure.arrival).getTime(),
       departureMs: new Date(departure.departure).getTime()
     }))
-    .filter((departure) => departure.arrivalMs > departure.departureMs)
+    .map((departure) => ({
+      ...departure,
+      durationMs: departure.arrivalMs - departure.departureMs
+    }))
+    .filter((departure) => Number.isFinite(departure.durationMs) && departure.durationMs > 0)
     .filter((departure) => (
-      departure.departureMs <= maxDepartureMs &&
+      departure.departureMs <= Math.min(lastReceivedMs, departedAtMs) + scheduledDepartureFutureToleranceMs(departure.durationMs) &&
       departure.arrivalMs >= minArrivalMs
     ))
+    .filter((departure) => Math.abs(departure.departureMs - departedAtMs) <= scheduledDepartureMatchToleranceMs(departure.durationMs))
     .sort((left, right) => Math.abs(left.departureMs - departedAtMs) - Math.abs(right.departureMs - departedAtMs));
 
   const candidate = candidates[0];
   return candidate
     ? {
         departure: candidate.departure,
-        arrival: candidate.arrival
+        arrival: candidate.arrival,
+        durationMs: candidate.durationMs
       }
     : undefined;
+}
+
+function scheduledDepartureFutureToleranceMs(durationMs: number): number {
+  return Math.min(15 * 60 * 1000, Math.max(2 * 60 * 1000, durationMs * 0.2));
+}
+
+function scheduledDepartureMatchToleranceMs(durationMs: number): number {
+  return Math.min(15 * 60 * 1000, Math.max(3 * 60 * 1000, durationMs * 0.5));
+}
+
+function hasFreshVoyagePosition(
+  row: VesselRow,
+  originLocation: LocationReferenceResponse,
+  destinationLocation: LocationReferenceResponse,
+  matchedVoyage: ScheduledVoyage | undefined,
+  now: Date
+): boolean {
+  const ageMs = now.getTime() - parseSqlTimestamp(row.last_received).getTime();
+  const maxAgeMs = matchedVoyage
+    ? Math.min(30 * 60 * 1000, Math.max(5 * 60 * 1000, matchedVoyage.durationMs * 0.5))
+    : routeDistanceFreshnessMs(distanceKm(originLocation, destinationLocation));
+  return ageMs <= maxAgeMs;
+}
+
+function routeDistanceFreshnessMs(routeDistanceKm: number): number {
+  if (routeDistanceKm <= 5) {
+    return 5 * 60 * 1000;
+  }
+  if (routeDistanceKm <= 10) {
+    return 10 * 60 * 1000;
+  }
+  return 30 * 60 * 1000;
 }
 
 function isCompletedVoyage(row: VesselRow, voyage: VesselVoyageResponse, now: Date): boolean {
