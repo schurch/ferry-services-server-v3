@@ -144,6 +144,68 @@ describe("vessel persistence", () => {
     });
   });
 
+  it("does not derive a destination when a shared origin has multiple plausible services", () => {
+    currentDb = createTestDatabase();
+    const db = currentDb.db;
+    const terminals = [
+      { organisationId: 1, serviceId: 5, name: "Ardrossan", latitude: 55.640516, longitude: -4.823062 },
+      { organisationId: 1, serviceId: 5, name: "Brodick", latitude: 55.576606, longitude: -5.139172 },
+      { organisationId: 1, serviceId: 36, name: "Ardrossan", latitude: 55.640516, longitude: -4.823062 },
+      { organisationId: 1, serviceId: 36, name: "Campbeltown", latitude: 55.424, longitude: -5.607 }
+    ];
+
+    saveVessel(db, vesselPosition({
+      latitude: 55.640516,
+      longitude: -4.823062,
+      lastReceived: "2026-05-24 08:40:00",
+      destinationName: "Not Available",
+      originName: "Ardrossan"
+    }));
+
+    assert.deepEqual(enrichVoyage(db, terminals, 1, {
+      mmsi: 123456789,
+      latitude: 55.61,
+      longitude: -4.95,
+      destinationName: "Not Available",
+      receivedAt: "2026-05-24 08:48:08"
+    }), {
+      destinationName: undefined,
+      originName: "Ardrossan",
+      originDepartedAt: "2026-05-24 08:48:08"
+    });
+  });
+
+  it("uses a reported destination to disambiguate a shared origin", () => {
+    currentDb = createTestDatabase();
+    const db = currentDb.db;
+    const terminals = [
+      { organisationId: 1, serviceId: 5, name: "Ardrossan", latitude: 55.640516, longitude: -4.823062 },
+      { organisationId: 1, serviceId: 5, name: "Brodick", latitude: 55.576606, longitude: -5.139172 },
+      { organisationId: 1, serviceId: 36, name: "Ardrossan", latitude: 55.640516, longitude: -4.823062 },
+      { organisationId: 1, serviceId: 36, name: "Campbeltown", latitude: 55.424, longitude: -5.607 }
+    ];
+
+    saveVessel(db, vesselPosition({
+      latitude: 55.640516,
+      longitude: -4.823062,
+      lastReceived: "2026-05-24 08:40:00",
+      destinationName: "Not Available",
+      originName: "Ardrossan"
+    }));
+
+    assert.deepEqual(enrichVoyage(db, terminals, 1, {
+      mmsi: 123456789,
+      latitude: 55.61,
+      longitude: -4.95,
+      destinationName: "BRODICK",
+      receivedAt: "2026-05-24 08:48:08"
+    }), {
+      destinationName: "Brodick",
+      originName: "Ardrossan",
+      originDepartedAt: "2026-05-24 08:48:08"
+    });
+  });
+
   it("does not pair an origin with a reported destination from another route", () => {
     currentDb = createTestDatabase();
     const db = currentDb.db;

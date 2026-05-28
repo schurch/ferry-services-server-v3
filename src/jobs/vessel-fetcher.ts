@@ -28,6 +28,7 @@ type AisStreamMessage = {
 };
 
 type MarineTrafficVessel = {
+  SHIP_ID?: unknown;
   MMSI?: unknown;
   SHIPNAME?: unknown;
   LAT?: unknown;
@@ -35,6 +36,10 @@ type MarineTrafficVessel = {
   SPEED?: unknown;
   COURSE?: unknown;
   TIMESTAMP?: unknown;
+};
+
+type MarineTrafficVoyage = {
+  reportedDestination?: unknown;
 };
 
 type VesselFetchResult = {
@@ -407,6 +412,7 @@ function destinationFromOrigin(
   position: PositionUpdate
 ): string | undefined {
   const candidates = terminals.filter((terminal) => terminal.name === origin.name && terminal.organisationId === origin.organisationId);
+  const destinations = new Set<string>();
   for (const candidate of candidates) {
     const routeTerminals = serviceTerminals(terminals, candidate.serviceId);
     if (routeTerminals.length !== 2 || !withinServiceBox(routeTerminals, position)) {
@@ -415,10 +421,10 @@ function destinationFromOrigin(
 
     const destination = routeTerminals.find((terminal) => terminal.name !== candidate.name);
     if (destination) {
-      return destination.name;
+      destinations.add(destination.name);
     }
   }
-  return undefined;
+  return destinations.size === 1 ? [...destinations][0] : undefined;
 }
 
 function normalizeLocationName(value: string): string {
@@ -747,7 +753,7 @@ function isCloudflareChallenge(status: number, contentType: string | null, body:
   return status === 403 && contentType?.includes("text/html") === true && body.includes("Attention Required! | Cloudflare");
 }
 
-function marineTrafficPosition(value: MarineTrafficVessel): { position: PositionUpdate; name?: string | undefined } | null {
+function marineTrafficPosition(value: MarineTrafficVessel): { position: PositionUpdate; name?: string | undefined; shipId?: number | undefined } | null {
   const mmsi = parseInteger(value.MMSI);
   const latitude = parseNumber(value.LAT);
   const longitude = parseNumber(value.LON);
@@ -766,7 +772,8 @@ function marineTrafficPosition(value: MarineTrafficVessel): { position: Position
       course: parseNumber(value.COURSE),
       receivedAt: timestamp
     },
-    name: name ? capitaliseWords(name) : undefined
+    name: name ? capitaliseWords(name) : undefined,
+    shipId: parseInteger(value.SHIP_ID)
   };
 }
 
@@ -797,13 +804,48 @@ async function fetchMarineTrafficVessel(
       return null;
     }
 
+    const voyage = await fetchMarineTrafficVoyageData(client, headers, parsed.shipId);
     return {
-      position: parsed.position,
+      position: {
+        ...parsed.position,
+        ...voyage
+      },
       name: parsed.name
     };
   } catch (error) {
     logger.warn({ err: error, mmsi }, "Skipping vessel because MarineTraffic fetch failed");
     return null;
+  }
+}
+
+async function fetchMarineTrafficVoyageData(
+  client: MarineTrafficClient,
+  headers: MarineTrafficHeaders,
+  shipId: number | undefined
+): Promise<Pick<PositionUpdate, "destinationName">> {
+  if (shipId === undefined) {
+    return {};
+  }
+
+  try {
+    const response = await client.get(
+      `https://www.marinetraffic.com/en/vessels/${shipId}/voyage`,
+      marineTrafficRequestOptions(headers)
+    );
+    const body = await response.text();
+    if (response.status < 200 || response.status >= 300) {
+      logger.warn({ shipId, statusCode: response.status }, "Skipping voyage enrichment because MarineTraffic returned an error");
+      return {};
+    }
+
+    const voyage = JSON.parse(body) as MarineTrafficVoyage;
+    const rawDestination = parseText(voyage.reportedDestination);
+    return {
+      destinationName: rawDestination ? cleanVesselText(rawDestination) : undefined
+    };
+  } catch (error) {
+    logger.warn({ err: error, shipId }, "Skipping voyage enrichment because MarineTraffic fetch failed");
+    return {};
   }
 }
 
