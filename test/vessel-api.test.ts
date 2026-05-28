@@ -480,8 +480,8 @@ function isTimestampKey(key: string): boolean {
   return ["departure", "arrival", "departedAt", "estimatedArrival", "lastReceived", "lastSeenAt", "updated", "lastUpdatedDate"].includes(key);
 }
 
-function requireService(db: Database.Database, serviceId: number): ServiceResponse {
-  const service = getService(db, serviceId);
+function requireService(db: Database.Database, serviceId: number, date?: string): ServiceResponse {
+  const service = getService(db, serviceId, date);
   assert.notEqual(service, null);
   return service as ServiceResponse;
 }
