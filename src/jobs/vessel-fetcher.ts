@@ -430,10 +430,63 @@ function destinationFromOrigin(
 function normalizeLocationName(value: string): string {
   return value
     .toLowerCase()
+    .replace(/\bqy\b/g, "quay")
     .replace(/&/g, "and")
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ");
+}
+
+function locationNameTokens(value: string): string[] {
+  return normalizeLocationName(value)
+    .split(" ")
+    .filter((token) => token.length >= 3 && !["bay", "pier", "point", "quay", "slip", "terminal"].includes(token));
+}
+
+function destinationTokenMatches(targetTokens: string[], token: string): boolean {
+  return targetTokens.some((targetToken) => (
+    targetToken === token ||
+    targetToken === `${token}s` ||
+    token === `${targetToken}s` ||
+    (token.length >= 5 && targetToken.length >= 5 && (
+      targetToken.startsWith(token) ||
+      token.startsWith(targetToken)
+    ))
+  ));
+}
+
+function rawDestinationIncludesLocation(rawDestination: string, locationName: string): boolean {
+  const target = normalizeLocationName(rawDestination);
+  const location = normalizeLocationName(locationName);
+  const tokens = locationNameTokens(locationName);
+  if (target === "" || location === "" || tokens.length === 0) {
+    return false;
+  }
+
+  if (target === location || target.includes(location)) {
+    return true;
+  }
+
+  const targetTokens = target.split(" ");
+  return tokens.every((token) => destinationTokenMatches(targetTokens, token)) ||
+    tokens.some((token) => token.length >= 5 && destinationTokenMatches(targetTokens, token));
+}
+
+function matchingTerminalDestinations(
+  terminals: TerminalReference[],
+  organisationId: number,
+  rawDestination: string | undefined,
+  excludedName?: string
+): TerminalReference[] {
+  if (rawDestination === undefined) {
+    return [];
+  }
+
+  return terminals.filter((terminal) => (
+    terminal.organisationId === organisationId &&
+    terminal.name !== excludedName &&
+    rawDestinationIncludesLocation(rawDestination, terminal.name)
+  ));
 }
 
 function matchingTerminalDestination(
@@ -442,16 +495,11 @@ function matchingTerminalDestination(
   rawDestination: string | undefined,
   excludedName?: string
 ): string | undefined {
-  if (rawDestination === undefined) {
-    return undefined;
+  const matches = new Map<string, TerminalReference>();
+  for (const terminal of matchingTerminalDestinations(terminals, organisationId, rawDestination, excludedName)) {
+    matches.set(terminal.name, terminal);
   }
-
-  const target = normalizeLocationName(rawDestination);
-  return terminals.find((terminal) => (
-    terminal.organisationId === organisationId &&
-    terminal.name !== excludedName &&
-    normalizeLocationName(terminal.name) === target
-  ))?.name;
+  return matches.size === 1 ? [...matches.values()][0]?.name : undefined;
 }
 
 function routeMatchedDestination(
@@ -464,7 +512,6 @@ function routeMatchedDestination(
     return undefined;
   }
 
-  const target = normalizeLocationName(rawDestination);
   const originCandidates = terminals.filter((terminal) => (
     terminal.organisationId === origin.organisationId &&
     terminal.name === origin.name
@@ -474,7 +521,7 @@ function routeMatchedDestination(
     const routeTerminals = serviceTerminals(terminals, candidate.serviceId);
     const destination = routeTerminals.find((terminal) => (
       terminal.name !== candidate.name &&
-      normalizeLocationName(terminal.name) === target
+      rawDestinationIncludesLocation(rawDestination, terminal.name)
     ));
     if (destination && withinServiceBox(routeTerminals, position)) {
       return destination.name;
