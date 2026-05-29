@@ -1,4 +1,4 @@
-import { config } from "../config.js";
+import { config } from "../shared/config.js";
 import type {
   DepartureApiResponse,
   LocationApiResponse,
@@ -6,9 +6,6 @@ import type {
   ServiceApiResponse,
   ServiceListApiResponse
 } from "../api/schema.js";
-
-// #region Types
-
 type PageService = Omit<ServiceApiResponse, "locations"> & {
   locations: LocationApiResponse[];
 };
@@ -28,11 +25,6 @@ type AttributeValue = string | number | boolean | null | undefined;
 type LocationWithScheduledDepartures = LocationApiResponse & {
   scheduled_departures: DepartureApiResponse[];
 };
-
-// #endregion
-
-// #region HTML helpers
-
 const statusNames = ["normal", "disrupted", "cancelled"] as const;
 
 function escapeHtml(value: unknown): string {
@@ -88,11 +80,6 @@ function escapeJsonForScript(value: unknown): string {
     .replaceAll("\u2028", "\\u2028")
     .replaceAll("\u2029", "\\u2029");
 }
-
-// #endregion
-
-// #region Formatting
-
 function statusName(status: unknown): string {
   return statusNames[Number(status)] ?? "unknown";
 }
@@ -163,11 +150,6 @@ function hasCalmacBrand(name: string): boolean {
   const normalized = name.trim().toLowerCase();
   return normalized.includes("calmac") || normalized.includes("caledonian macbrayne");
 }
-
-// #endregion
-
-// #region Layout
-
 function layout(title: string, body: string): string {
   const ferryConfig = escapeJsonForScript({
     googleMapsApiKey: config.googleMapsApiKey
@@ -236,11 +218,6 @@ function pageChrome(content: string): string {
     ${siteFooter()}
   </main>`;
 }
-
-// #endregion
-
-// #region Services page
-
 export function renderServicesPage(services: Array<ServiceApiResponse | ServiceListApiResponse>): string {
   const groups = new Map<string, Array<ServiceApiResponse | ServiceListApiResponse>>();
   for (const service of services) {
@@ -288,11 +265,6 @@ export function renderServicesPage(services: Array<ServiceApiResponse | ServiceL
 
   return layout("Scottish Ferries", pageChrome(content));
 }
-
-// #endregion
-
-// #region Service detail page
-
 function locationSummary(service: PageService): string {
   const locations = [...(service.locations ?? [])].sort((left, right) => String(left.name).localeCompare(String(right.name)));
   return `${sectionTitle("Locations")}
@@ -457,11 +429,6 @@ export function renderAdditionalInfoPage(service: PageService): string {
   ${panel(String(service.additional_info ?? ""))}`;
   return layout(`${service.area} Info - Scottish Ferries`, pageChrome(content));
 }
-
-// #endregion
-
-// #region Static pages
-
 export function renderNotFoundPage(message = "Page not found"): string {
   return layout("Not Found - Scottish Ferries", pageChrome(panel(`<h1 class="title">Not Found</h1><p>${escapeHtml(message)}</p>`)));
 }
@@ -487,5 +454,3 @@ export function renderPrivacyPolicyPage(): string {
   </article>`;
   return layout("Privacy Policy - Scottish Ferries", pageChrome(content));
 }
-
-// #endregion
