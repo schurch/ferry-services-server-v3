@@ -11,8 +11,10 @@ import {
   renderNotFoundPage,
   renderPrivacyPolicyPage,
   renderServicePage,
-  renderServicesPage
+  renderServicesPage,
+  renderStatsPage
 } from "./pages.js";
+import { getWebsiteStats } from "./stats.js";
 
 export function registerWebRoutes(
   app: FastifyInstance,
@@ -98,4 +100,16 @@ export function registerWebRoutes(
       }
     }
   }, async (_request, reply) => reply.type("text/html").send(renderPrivacyPolicyPage()));
+
+  app.get("/stats", {
+    schema: {
+      hide: true,
+      response: {
+        200: Type.String()
+      }
+    }
+  }, async (_request, reply) => {
+    const stats = getWebsiteStats(db, now());
+    return reply.type("text/html").send(renderStatsPage(stats));
+  });
 }

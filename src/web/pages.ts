@@ -6,6 +6,7 @@ import type {
   ServiceApiResponse,
   ServiceListApiResponse
 } from "../api/schema.js";
+import type { WebsiteStats } from "./stats.js";
 type PageService = Omit<ServiceApiResponse, "locations"> & {
   locations: LocationApiResponse[];
 };
@@ -143,6 +144,17 @@ function formatTime(value: unknown): string {
     hour: "numeric",
     minute: "2-digit",
     timeZone: "Europe/London"
+  }).format(date);
+}
+
+function formatShortDate(value: unknown): string {
+  if (!value) return "Unknown";
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return "Unknown";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC"
   }).format(date);
 }
 
@@ -453,4 +465,170 @@ export function renderPrivacyPolicyPage(): string {
     <section><h2>Contact</h2><p>Developer: Stefan Church<br>Privacy contact: <a href="mailto:stefan.church@gmail.com">stefan.church@gmail.com</a></p></section>
   </article>`;
   return layout("Privacy Policy - Scottish Ferries", pageChrome(content));
+}
+
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat("en-GB").format(value);
+}
+
+function percentage(value: number, total: number): string {
+  if (total <= 0) return "0%";
+  return `${Math.round((value / total) * 100)}%`;
+}
+
+function metricCard(label: string, value: number, detail: string): string {
+  return `<article class="stats-metric">
+    <div class="stats-metric-label">${escapeHtml(label)}</div>
+    <div class="stats-metric-value">${escapeHtml(formatNumber(value))}</div>
+    <div class="stats-metric-detail">${escapeHtml(detail)}</div>
+  </article>`;
+}
+
+function horizontalBars(
+  rows: Array<{
+    label: string;
+    value: number;
+    sublabel?: string;
+    tone?: "default" | "warning" | "danger";
+  }>
+): string {
+  const maxValue = Math.max(...rows.map((row) => row.value), 1);
+  return `<div class="stats-bars">
+    ${rows.map((row) => `<article class="stats-bar-row">
+      <div class="stats-bar-copy">
+        <strong>${escapeHtml(row.label)}</strong>
+        ${row.sublabel ? `<span>${escapeHtml(row.sublabel)}</span>` : ""}
+      </div>
+      <div class="stats-bar-track">
+        <div class="stats-bar-fill stats-bar-fill-${row.tone ?? "default"}" style="width: ${Math.max((row.value / maxValue) * 100, row.value > 0 ? 10 : 0)}%"></div>
+      </div>
+      <div class="stats-bar-value">${escapeHtml(formatNumber(row.value))}</div>
+    </article>`).join("")}
+  </div>`;
+}
+
+function disruptionBars(stats: WebsiteStats): string {
+  const maxValue = Math.max(...stats.disruptionLeaders.map((row) => row.affectedDays), 1);
+  return `<div class="stats-bars">
+    ${stats.disruptionLeaders.map((row) => {
+      const disruptedWidth = row.affectedDays > 0 ? (row.disruptedDays / maxValue) * 100 : 0;
+      const cancelledWidth = row.affectedDays > 0 ? (row.cancelledDays / maxValue) * 100 : 0;
+      return `<article class="stats-bar-row">
+        <div class="stats-bar-copy">
+          <strong>${escapeHtml(row.area)}</strong>
+          <span>${escapeHtml(row.route)}</span>
+        </div>
+        <div class="stats-bar-track">
+          <div class="stats-bar-fill stats-bar-fill-warning" style="width: ${disruptedWidth}%"></div>
+          <div class="stats-bar-fill stats-bar-fill-danger" style="width: ${cancelledWidth}%"></div>
+        </div>
+        <div class="stats-bar-value">${escapeHtml(formatNumber(row.affectedDays))}</div>
+      </article>`;
+    }).join("")}
+  </div>`;
+}
+
+function dailyTrendChart(stats: WebsiteStats): string {
+  if (stats.dailyStatusTrend.every((day) => day.observedServices === 0)) {
+    return `<p class="muted small">No daily reliability data is available yet.</p>`;
+  }
+
+  return `<div class="stats-trend">
+    ${stats.dailyStatusTrend.map((day) => {
+      const total = Math.max(day.observedServices, 1);
+      const normalHeight = (day.normalServices / total) * 100;
+      const disruptedHeight = (day.disruptedServices / total) * 100;
+      const cancelledHeight = (day.cancelledServices / total) * 100;
+      return `<article class="stats-trend-day">
+        <div class="stats-trend-column" title="${escapeAttribute(`${day.observedDate}: ${day.normalServices} normal, ${day.disruptedServices} disrupted, ${day.cancelledServices} cancelled`)}">
+          <span class="stats-trend-segment stats-trend-normal" style="height: ${normalHeight}%"></span>
+          <span class="stats-trend-segment stats-trend-disrupted" style="height: ${disruptedHeight}%"></span>
+          <span class="stats-trend-segment stats-trend-cancelled" style="height: ${cancelledHeight}%"></span>
+        </div>
+        <div class="stats-trend-date">${escapeHtml(formatShortDate(`${day.observedDate}T00:00:00Z`))}</div>
+        <div class="stats-trend-count">${escapeHtml(formatNumber(day.observedServices))}</div>
+      </article>`;
+    }).join("")}
+  </div>`;
+}
+
+export function renderStatsPage(stats: WebsiteStats): string {
+  const deviceTotal = stats.deviceBreakdown.reduce((sum, row) => sum + row.count, 0);
+  const topSubscribed = stats.topSubscribedServices.length > 0
+    ? horizontalBars(stats.topSubscribedServices.map((row) => ({
+        label: row.area,
+        sublabel: row.route,
+        value: row.subscriberCount
+      })))
+    : `<p class="muted small">No service subscriptions have been recorded yet.</p>`;
+  const disruptionLeaders = stats.disruptionLeaders.length > 0
+    ? disruptionBars(stats)
+    : `<p class="muted small">No disrupted or cancelled service days have been recorded in the last 30 days.</p>`;
+
+  const content = `<section class="stats-hero panel">
+    <h1 class="title">Website Stats</h1>
+    <p class="small muted">Generated ${escapeHtml(formatDateTime(stats.generatedAt))}</p>
+  </section>
+
+  <section class="stats-grid">
+    ${metricCard("Installations", stats.overview.totalInstallations, "")}
+    ${metricCard("Subscribed", stats.overview.subscribedInstallations, "")}
+    ${metricCard("Tracked services", stats.overview.totalServices, `${formatNumber(stats.overview.normalServices)} normal right now`)}
+    ${metricCard("Live disruption count", stats.overview.disruptedServices + stats.overview.cancelledServices, `${formatNumber(stats.overview.cancelledServices)} cancelled, ${formatNumber(stats.overview.disruptedServices)} disrupted`)}
+  </section>
+
+  ${panel(`
+    ${sectionTitle("Device Mix")}
+    <div class="stats-split">
+      <div class="stats-split-track">
+        ${stats.deviceBreakdown.map((row) => `<div class="stats-split-segment stats-split-${row.deviceType.toLowerCase()}" style="width: ${percentage(row.count, deviceTotal)}"></div>`).join("")}
+      </div>
+      <div class="stats-legend">
+        ${stats.deviceBreakdown.map((row) => `<div class="stats-legend-item">
+          <span class="stats-legend-dot stats-split-${row.deviceType.toLowerCase()}"></span>
+          <span>${escapeHtml(row.deviceType === "IOS" ? "iOS" : "Android")}</span>
+          <strong>${escapeHtml(formatNumber(row.count))}</strong>
+          <span class="muted">${escapeHtml(percentage(row.count, deviceTotal))}</span>
+        </div>`).join("")}
+      </div>
+    </div>
+  `)}
+
+  ${panel(`
+    ${sectionTitle("Most Subscribed Services")}
+    ${topSubscribed}
+  `)}
+
+  ${panel(`
+    ${sectionTitle("Most Disrupted Services")}
+    ${disruptionLeaders}
+  `)}
+
+  ${panel(`
+    ${sectionTitle("Daily Service Status Mix")}
+    ${dailyTrendChart(stats)}
+  `)}
+
+  ${panel(`
+    ${sectionTitle("Current Network Status")}
+    ${horizontalBars([
+      {
+        label: "Normal services",
+        value: stats.overview.normalServices,
+        tone: "default"
+      },
+      {
+        label: "Disrupted services",
+        value: stats.overview.disruptedServices,
+        tone: "warning"
+      },
+      {
+        label: "Cancelled services",
+        value: stats.overview.cancelledServices,
+        tone: "danger"
+      }
+    ])}
+  `)}`;
+
+  return layout("Website Stats - Scottish Ferries", pageChrome(content));
 }

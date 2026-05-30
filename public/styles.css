@@ -925,6 +925,202 @@ button {
   padding: 14px;
 }
 
+.stats-hero .title {
+  margin-bottom: 8px;
+}
+
+.stats-hero .page-subtitle {
+  max-width: 760px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stats-metric {
+  background: linear-gradient(180deg, var(--panel-bg-start) 0%, var(--panel-bg-end) 100%);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: var(--shadow-panel);
+}
+
+.stats-metric-label {
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 800;
+}
+
+.stats-metric-value {
+  margin-top: 10px;
+  font-size: clamp(1.8rem, 4vw, 2.5rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-weight: 800;
+}
+
+.stats-metric-detail {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.stats-split-track {
+  display: flex;
+  overflow: hidden;
+  min-height: 18px;
+  border-radius: 999px;
+  background: rgba(16, 36, 62, 0.08);
+}
+
+.stats-split-segment {
+  min-width: 0;
+}
+
+.stats-split-ios {
+  background: linear-gradient(90deg, #1b9aaa 0%, #21bfaa 100%);
+}
+
+.stats-split-android {
+  background: linear-gradient(90deg, #0a2540 0%, #375a7d 100%);
+}
+
+.stats-legend {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.stats-legend-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+}
+
+.stats-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.stats-bars {
+  display: grid;
+  gap: 12px;
+}
+
+.stats-bar-row {
+  display: grid;
+  grid-template-columns: minmax(0, 240px) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.stats-bar-copy {
+  min-width: 0;
+}
+
+.stats-bar-copy strong,
+.stats-bar-copy span {
+  display: block;
+}
+
+.stats-bar-copy span {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-top: 2px;
+}
+
+.stats-bar-track {
+  display: flex;
+  overflow: hidden;
+  min-height: 14px;
+  border-radius: 999px;
+  background: rgba(16, 36, 62, 0.08);
+}
+
+.stats-bar-fill {
+  min-width: 0;
+}
+
+.stats-bar-fill-default {
+  background: linear-gradient(90deg, #1b9aaa 0%, #21bfaa 100%);
+}
+
+.stats-bar-fill-warning {
+  background: linear-gradient(90deg, #d78b17 0%, #eba63a 100%);
+}
+
+.stats-bar-fill-danger {
+  background: linear-gradient(90deg, #b53333 0%, #e25d5d 100%);
+}
+
+.stats-bar-value {
+  min-width: 2ch;
+  text-align: right;
+  font-weight: 700;
+}
+
+.stats-trend {
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.stats-trend-day {
+  min-width: 0;
+  text-align: center;
+}
+
+.stats-trend-column {
+  height: 160px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+  border-radius: 14px;
+  background: rgba(16, 36, 62, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(16, 36, 62, 0.04);
+}
+
+.stats-trend-segment {
+  display: block;
+}
+
+.stats-trend-normal {
+  background: var(--green);
+}
+
+.stats-trend-disrupted {
+  background: var(--amber);
+}
+
+.stats-trend-cancelled {
+  background: var(--red);
+}
+
+.stats-trend-date,
+.stats-trend-count {
+  font-size: 0.78rem;
+}
+
+.stats-trend-date {
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+.stats-trend-count {
+  margin-top: 2px;
+  font-weight: 700;
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -981,5 +1177,36 @@ button {
     padding-top: 0;
     position: static;
     top: auto;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stats-bar-row {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-bar-value {
+    text-align: left;
+  }
+
+  .stats-trend {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-legend-item {
+    grid-template-columns: auto 1fr auto;
+  }
+
+  .stats-legend-item .muted {
+    grid-column: 2 / -1;
+    margin-left: 18px;
   }
 }
