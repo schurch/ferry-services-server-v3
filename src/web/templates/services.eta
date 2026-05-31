@@ -1,0 +1,26 @@
+<div class="header">
+  <div class="controls">
+    <input class="search" type="search" placeholder="Search by area or route" aria-label="Search services" data-service-search>
+  </div>
+</div>
+<p class="muted" data-empty-search hidden>No services found.</p>
+<% it.groups.forEach(function (group) { %>
+  <section class="group" data-service-group>
+    <h2 class="group-heading">
+      <% if (group.hasLogo) { %><img class="group-logo" src="/assets/calmac-logo.png" alt="" aria-hidden="true"><% } %>
+      <span><%= group.name %></span>
+    </h2>
+    <% group.services.forEach(function (service) { %>
+      <a class="row-link" href="<%= service.href %>" data-service-row data-search="<%= service.search %>">
+        <article class="row">
+          <span class="status-dot status-<%= service.status %>" aria-hidden="true"></span>
+          <div class="row-main">
+            <strong><%= service.area %></strong>
+            <div class="route"><%= service.route %></div>
+            <div class="status-text status-<%= service.status %>"><%= service.statusLabel %></div>
+          </div>
+        </article>
+      </a>
+    <% }) %>
+  </section>
+<% }) %>

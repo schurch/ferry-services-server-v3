@@ -1,0 +1,4 @@
+<section class="panel">
+  <h1 class="title">Not Found</h1>
+  <p><%= it.message %></p>
+</section>

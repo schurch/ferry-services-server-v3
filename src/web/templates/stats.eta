@@ -1,0 +1,98 @@
+<section class="stats-hero panel">
+  <h1 class="title">Website Stats</h1>
+  <p class="small muted">Generated <%= it.generatedAt %></p>
+</section>
+<section class="stats-grid">
+  <% it.metrics.forEach(function(metric) { %>
+    <article class="stats-metric">
+      <div class="stats-metric-label"><%= metric.label %></div>
+      <div class="stats-metric-value"><%= metric.value %></div>
+      <div class="stats-metric-detail"><%= metric.detail %></div>
+    </article>
+  <% }) %>
+</section>
+<section class="panel">
+  <h2 class="title card-subtitle">Device Mix</h2>
+  <div class="stats-split">
+    <div class="stats-split-track">
+      <% it.deviceMix.forEach(function(row) { %><div class="stats-split-segment stats-split-<%= row.deviceType %>" style="width: <%= row.percentage %>"></div><% }) %>
+    </div>
+    <div class="stats-legend">
+      <% it.deviceMix.forEach(function(row) { %>
+        <div class="stats-legend-item">
+          <span class="stats-legend-dot stats-split-<%= row.deviceType %>"></span>
+          <span><%= row.label %></span>
+          <strong><%= row.count %></strong>
+          <span class="muted"><%= row.percentage %></span>
+        </div>
+      <% }) %>
+    </div>
+  </div>
+</section>
+<section class="panel">
+  <h2 class="title card-subtitle">Most Subscribed Services</h2>
+  <% if (it.mostSubscribed.length === 0) { %>
+    <p class="muted small">No service subscriptions have been recorded yet.</p>
+  <% } else { %>
+    <div class="stats-bars">
+      <% it.mostSubscribed.forEach(function(row) { %>
+        <article class="stats-bar-row">
+          <div class="stats-bar-copy"><strong><%= row.label %></strong><% if (row.sublabel) { %><span><%= row.sublabel %></span><% } %></div>
+          <div class="stats-bar-track"><div class="stats-bar-fill stats-bar-fill-<%= row.tone %>" style="width: <%= row.width %>%"></div></div>
+          <div class="stats-bar-value"><%= row.value %></div>
+        </article>
+      <% }) %>
+    </div>
+  <% } %>
+</section>
+<section class="panel">
+  <h2 class="title card-subtitle">Most Disrupted Services</h2>
+  <% if (it.mostDisrupted.length === 0) { %>
+    <p class="muted small">No disrupted or cancelled service days have been recorded in the last 30 days.</p>
+  <% } else { %>
+    <div class="stats-bars">
+      <% it.mostDisrupted.forEach(function(row) { %>
+        <article class="stats-bar-row">
+          <div class="stats-bar-copy"><strong><%= row.area %></strong><span><%= row.route %></span></div>
+          <div class="stats-bar-track">
+            <div class="stats-bar-fill stats-bar-fill-warning" style="width: <%= row.disruptedWidth %>%"></div>
+            <div class="stats-bar-fill stats-bar-fill-danger" style="width: <%= row.cancelledWidth %>%"></div>
+          </div>
+          <div class="stats-bar-value"><%= row.affectedDays %></div>
+        </article>
+      <% }) %>
+    </div>
+  <% } %>
+</section>
+<section class="panel">
+  <h2 class="title card-subtitle">Daily Service Status Mix</h2>
+  <% if (it.dailyStatus.length === 0) { %>
+    <p class="muted small">No daily reliability data is available yet.</p>
+  <% } else { %>
+    <div class="stats-trend">
+      <% it.dailyStatus.forEach(function(day) { %>
+        <article class="stats-trend-day">
+          <div class="stats-trend-column" title="<%= day.title %>">
+            <span class="stats-trend-segment stats-trend-normal" style="height: <%= day.normalHeight %>%"></span>
+            <span class="stats-trend-segment stats-trend-disrupted" style="height: <%= day.disruptedHeight %>%"></span>
+            <span class="stats-trend-segment stats-trend-cancelled" style="height: <%= day.cancelledHeight %>%"></span>
+          </div>
+          <div class="stats-trend-date"><%= day.date %></div>
+          <div class="stats-trend-count"><%= day.count %></div>
+        </article>
+      <% }) %>
+    </div>
+  <% } %>
+</section>
+<section class="panel">
+  <h2 class="title card-subtitle">Current Network Status</h2>
+  <div class="stats-bars">
+    <% it.currentStatus.forEach(function(row) { %>
+      <article class="stats-bar-row">
+        <div class="stats-bar-copy"><strong><%= row.label %></strong></div>
+        <div class="stats-bar-track"><div class="stats-bar-fill stats-bar-fill-<%= row.tone %>" style="width: <%= row.width %>%"></div></div>
+        <div class="stats-bar-value"><%= row.value %></div>
+      </article>
+    <% }) %>
+  </div>
+</section>

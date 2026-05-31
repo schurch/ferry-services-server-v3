@@ -1,0 +1,4 @@
+<div class="header">
+  <h1 class="title"><%= it.area %> Info</h1>
+</div>
+<section class="panel"><%~ it.additionalInfo %></section>

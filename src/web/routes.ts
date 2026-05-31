@@ -13,7 +13,7 @@ import {
   renderServicePage,
   renderServicesPage,
   renderStatsPage
-} from "./pages.js";
+} from "./render.js";
 import { getWebsiteStats } from "./db.js";
 
 export function registerWebRoutes(

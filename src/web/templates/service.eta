@@ -1,0 +1,70 @@
+<section class="panel service-summary">
+  <h1 class="title" style="margin-bottom: 0; font-size: 1.1rem"><%= it.service.area %></h1>
+  <div class="muted" style="margin-bottom: 12px"><%= it.service.route %></div>
+  <div class="status-inline status-text status-<%= it.status %>">
+    <span class="status-dot status-<%= it.status %>" aria-hidden="true"></span>
+    <span><%= it.statusLabel %></span>
+  </div>
+  <p style="margin-top: 12px; margin-bottom: 0"><%= it.disruptionText %></p>
+  <% if (it.service.disruption_reason) { %><p class="small" style="margin-bottom: 0"><%= it.service.disruption_reason %></p><% } %>
+  <p class="small muted" style="margin-bottom: 0">Last updated: <%= it.lastUpdated %></p>
+  <% if (it.reliability) { %>
+    <p class="small muted" style="margin-bottom: 0">
+      Last 30 days: <%= it.reliability.disrupted %> disrupted day<%= it.reliability.disrupted === 1 ? "" : "s" %>, <%= it.reliability.cancelled %> cancelled day<%= it.reliability.cancelled === 1 ? "" : "s" %> across <%= it.reliability.scheduledSailings %> scheduled sailing<%= it.reliability.scheduledSailings === 1 ? "" : "s" %>.
+    </p>
+  <% } %>
+  <% if (it.detailsHref) { %><p style="margin-bottom: 0"><a href="<%= it.detailsHref %>">View disruption details</a></p><% } %>
+  <div class="panel-map-bleed">
+    <div class="map-shell">
+      <% if (it.map.pointsJson) { %>
+        <div class="map-mount" data-service-map data-points="<%= it.map.pointsJson %>" aria-label="<%= it.map.serviceArea %> map"></div>
+      <% } else { %>
+        <div class="map-missing-key">Google Maps requires an API key. Set <code>GOOGLE_MAPS_API_KEY</code> to render location and vessel markers for <%= it.map.serviceArea %>.</div>
+      <% } %>
+    </div>
+  </div>
+  <h2 class="title card-subtitle">Locations</h2>
+  <div class="grid">
+    <% it.locations.forEach(function(location) { %>
+      <article class="location">
+        <h3><%= location.name %></h3>
+        <% if (location.nextFerry) { %><p class="small" style="margin: 6px 0">Next ferry: <strong><%= location.nextFerry.departure %></strong> to <%= location.nextFerry.destination %></p><% } %>
+        <% if (location.nextRail) { %>
+          <p class="small" style="margin: 6px 0">Next rail: <strong><%= location.nextRail.departure %></strong> to <%= location.nextRail.destination %><% if (location.nextRail.platform) { %> &bull; Platform <%= location.nextRail.platform %><% } %><% if (location.nextRail.isCancelled) { %> &bull; <span class="status-cancelled">Cancelled</span><% } else if (location.nextRail.departureInfo) { %> &bull; <%= location.nextRail.departureInfo %><% } %></p>
+        <% } %>
+        <% if (location.weather) { %><p class="small muted" style="margin: 6px 0"><%= location.weather.temperatureCelsius %>C, <%= location.weather.description %>, wind <%= location.weather.windSpeedMph %> mph <%= location.weather.windDirectionCardinal %></p><% } %>
+      </article>
+    <% }) %>
+  </div>
+  <% if (it.scheduledDepartures) { %>
+    <div class="panel-divider"></div>
+    <div class="section-header">
+      <h2 class="title card-subtitle">Scheduled Departures</h2>
+      <form class="date-picker" method="get" action="/service/<%= it.scheduledDepartures.serviceId %>">
+        <span class="sr-only">Scheduled departures date</span>
+        <input class="date-input" type="date" name="departuresDate" value="<%= it.scheduledDepartures.departuresDate %>" aria-label="Scheduled departures date" onchange="this.form.submit()">
+      </form>
+    </div>
+    <% it.scheduledDepartures.routes.forEach(function(route) { %>
+      <article class="departures-route" data-destination-id="<%= route.destinationId %>">
+        <h3><%= route.originName %> to <%= route.destinationName %></h3>
+        <% route.departures.forEach(function(departure) { %>
+          <div class="departure-row <%= departure.hasDeparted ? "departure-dim" : "" %>">
+            <span><%= departure.departure %></span>
+            <span><%= departure.arrival %></span>
+          </div>
+        <% }) %>
+      </article>
+    <% }) %>
+  <% } %>
+  <% if (it.operator) { %>
+    <div class="panel-divider"></div>
+    <h2 class="title card-subtitle operator-heading">
+      <% if (it.operator.hasLogo) { %><img class="operator-logo" src="/assets/calmac-logo.png" alt="" aria-hidden="true"><% } %>
+      <span><%= it.operator.name %></span>
+    </h2>
+    <div class="inline-buttons">
+      <% it.operator.links.forEach(function(link) { %><a class="button" href="<%= link.href %>"<% if (link.external) { %> target="_blank" rel="noreferrer"<% } %>><%= link.label %></a><% }) %>
+    </div>
+  <% } %>
+</section>

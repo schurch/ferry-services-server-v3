@@ -53,6 +53,7 @@ RUN npm install -g npm@${NPM_VERSION}
 COPY package.json ./
 COPY --from=deps-prod /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/src/web/templates ./src/web/templates
 COPY --from=build /app/sqlite ./sqlite
 COPY --from=build /app/public ./public
 

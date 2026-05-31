@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><%= it.title %></title>
+    <link rel="icon" href="/favicon.ico">
+    <link rel="stylesheet" href="/styles.css">
+    <script>window.__FERRY_CONFIG__=<%~ it.ferryConfig %>;</script>
+    <script src="/client.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <section class="page-intro">
+        <h1 class="title"><a class="title-link" href="/">Scottish Ferries</a></h1>
+        <p class="page-subtitle">The latest disruption information</p>
+      </section>
+      <div class="content-with-promo">
+        <div class="primary-content"><%~ it.content %></div>
+        <aside class="promo-column">
+          <section class="app-promo">
+            <picture>
+              <source media="(prefers-color-scheme: dark)" srcset="/assets/screenshot-dark.png">
+              <img class="app-promo-shot" src="/assets/screenshot.png" alt="Scottish Ferries app screenshot" loading="lazy">
+            </picture>
+            <div class="app-promo-content">
+              <h2>Get the App</h2>
+              <p>Get notified about the latest disruptions with the app.</p>
+              <div class="store-links">
+                <a href="https://apps.apple.com/nz/app/scottish-ferries/id861271891" target="_blank" rel="noreferrer" aria-label="Download on the App Store">
+                  <img src="/assets/app-store.png" alt="Download on the App Store">
+                </a>
+                <a href="https://play.google.com/store/apps/details?id=com.stefanchurch.ferryservices" target="_blank" rel="noreferrer" aria-label="Get it on Google Play">
+                  <img src="/assets/play-store.png" alt="Get it on Google Play">
+                </a>
+              </div>
+            </div>
+          </section>
+        </aside>
+      </div>
+      <footer class="site-footer">
+        <h2>Support</h2>
+        <p>Please contact me at <a href="mailto:stefan.church@gmail.com">stefan.church@gmail.com</a> if you have any issues or questions.</p>
+        <p class="footer-links"><a href="/privacy-policy">Privacy Policy</a></p>
+      </footer>
+    </main>
+  </body>
+</html>
