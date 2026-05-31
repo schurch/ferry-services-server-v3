@@ -17,6 +17,7 @@ import { listLocationDepartureRows } from "../../api/db.js";
 import { logger } from "../../logger.js";
 import type { ScrapedService } from "./types.js";
 import type { ServiceStatus } from "../../api/types.js";
+import { calMacNotificationInfo } from "./notification-info.js";
 type OperatorScraper = {
   name: string;
   organisationId: number;
@@ -198,6 +199,7 @@ async function scrapePentland(): Promise<ScrapedService[]> {
       status,
       sourceStatus,
       additionalInfo,
+      notificationInfo: additionalInfo,
       organisationId: 6,
       notices: noticeFromHtml({
         title: "Announcement",
@@ -229,6 +231,7 @@ async function scrapeWestern(): Promise<ScrapedService[]> {
       status,
       sourceStatus: activeClass,
       additionalInfo: htmlOrUndefined(additionalInfo),
+      notificationInfo: htmlOrUndefined(additionalInfo),
       organisationId: 3,
       notices: noticeFromHtml({
         title: "Service status",
@@ -258,6 +261,7 @@ async function scrapeNorthLink(): Promise<ScrapedService[]> {
       status: statusClass.includes("service-disruptions") ? SERVICE_STATUS.disrupted : SERVICE_STATUS.normal,
       sourceStatus: statusClass,
       additionalInfo: htmlOrUndefined(additionalInfo),
+      notificationInfo: htmlOrUndefined(additionalInfo),
       organisationId: 2,
       notices: noticeFromHtml({
         title: "Operations news",
@@ -402,6 +406,7 @@ async function scrapeCalMac(): Promise<ScrapedService[]> {
     sourceAreaLongitude: route.location.longitude,
     disruptionReason: calMacDisruptionReason(route.routeStatuses),
     additionalInfo: calMacRouteInfo(route.routeStatuses),
+    notificationInfo: calMacNotificationInfo(route.routeStatuses.filter((status) => status.status === "SAILING")),
     organisationId: 1,
     notices: route.routeStatuses.map((status, index) => calMacNotice(route.routeCode, status, index))
   }));

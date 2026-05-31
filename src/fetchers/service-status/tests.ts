@@ -2,14 +2,24 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   finishServiceScrapeRun,
+  listServicesById,
+  saveServices,
   saveServiceReliabilityDays,
   saveServiceStatusObservations,
   startServiceScrapeRun
 } from "./db.js";
 import { createTestDatabase } from "../../test-helper.js";
 import type { ScrapedService } from "./types.js";
+import { calMacNotificationInfo } from "./notification-info.js";
 
 describe("service status observations", () => {
+  it("compares CalMac sailing notices independently of response order", () => {
+    const first = { title: "First", detail: "First detail", disruptionReason: "Weather" };
+    const second = { title: "Second", detail: "Second detail" };
+
+    assert.equal(calMacNotificationInfo([first, second]), calMacNotificationInfo([second, first]));
+  });
+
   it("records scrape runs, observations and structured notices", () => {
     const { db, cleanup } = createTestDatabase();
     try {
@@ -127,6 +137,14 @@ describe("service status observations", () => {
         FROM service_status_notice_payloads
       `).get() as { count: number };
       assert.equal(payloadCount.count, 2);
+      assert.equal(
+        listServicesById(db, [5]).get(5)?.notificationInfo,
+        JSON.stringify([{
+          title: "Wednesday 20 May",
+          detail: "Due to a technical issue, an amended timetable will operate.",
+          disruptionReason: "Technical"
+        }])
+      );
     } finally {
       cleanup();
     }
@@ -165,6 +183,25 @@ describe("service status observations", () => {
         WHERE scrape_run_id = ?
       `).get(scrapeRunId) as { count: number };
       assert.equal(count.count, 0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("does not track shared Orkney news as service-specific notification information", () => {
+    const { db, cleanup } = createTestDatabase();
+    try {
+      saveServices(db, [{
+        serviceId: 4000,
+        area: "Eday",
+        route: "Kirkwall - Eday - Stronsay - Sanday - Rapness",
+        status: 0,
+        additionalInfo: "<p>Shared Orkney news</p>",
+        organisationId: 5,
+        updated: "2026-05-20 12:00:00"
+      }]);
+
+      assert.equal(listServicesById(db, [4000]).get(4000)?.notificationInfo, undefined);
     } finally {
       cleanup();
     }

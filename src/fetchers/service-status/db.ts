@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import type { ScrapedService } from "./types.js";
 import type { ServiceStatus } from "../../api/types.js";
+import { calMacNotificationInfo } from "./notification-info.js";
 
 export function listServiceIdsForOrganisation(db: Database.Database, organisationId: number): number[] {
   return (db.prepare(`
@@ -42,6 +43,7 @@ export function listServicesById(db: Database.Database, serviceIds: number[]): M
         route: row.route,
         status: row.status,
         additionalInfo: row.additional_info ?? undefined,
+        notificationInfo: notificationInfo(db, row.service_id, row.organisation_id, row.additional_info),
         disruptionReason: row.disruption_reason ?? undefined,
         organisationId: row.organisation_id,
         lastUpdatedDate: row.last_updated_date ?? undefined,
@@ -49,6 +51,50 @@ export function listServicesById(db: Database.Database, serviceIds: number[]): M
       }]]
       : [];
   }));
+}
+
+function notificationInfo(
+  db: Database.Database,
+  serviceId: number,
+  organisationId: number,
+  additionalInfo: string | null
+): string | undefined {
+  if (organisationId === 1) {
+    return storedCalMacNotificationInfo(db, serviceId);
+  }
+  return [2, 3, 6].includes(organisationId) ? additionalInfo ?? undefined : undefined;
+}
+
+function storedCalMacNotificationInfo(db: Database.Database, serviceId: number): string | undefined {
+  const observation = db.prepare(`
+    SELECT observation_id
+    FROM service_status_observations
+    WHERE service_id = ?
+    ORDER BY observed_at DESC, observation_id DESC
+    LIMIT 1
+  `).get(serviceId) as { observation_id: number } | undefined;
+  if (!observation) {
+    return undefined;
+  }
+
+  const notices = db.prepare(`
+    SELECT n.title, p.detail_markdown, n.disruption_reason
+    FROM service_status_observation_notices n
+    LEFT JOIN service_status_notice_payloads p ON p.payload_id = n.payload_id
+    WHERE n.observation_id = ?
+      AND n.source_notice_type = 'SAILING'
+    ORDER BY n.display_order
+  `).all(observation.observation_id) as Array<{
+    title: string;
+    detail_markdown: string | null;
+    disruption_reason: string | null;
+  }>;
+
+  return calMacNotificationInfo(notices.map((notice) => ({
+    title: notice.title,
+    detail: notice.detail_markdown ?? "",
+    disruptionReason: notice.disruption_reason
+  })));
 }
 
 export function saveServices(db: Database.Database, services: ScrapedService[]): void {

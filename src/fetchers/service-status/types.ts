@@ -11,6 +11,7 @@ export type ScrapedService = {
   sourceAreaLatitude?: number | undefined;
   sourceAreaLongitude?: number | undefined;
   additionalInfo?: string | undefined;
+  notificationInfo?: string | undefined;
   disruptionReason?: string | undefined;
   organisationId: number;
   lastUpdatedDate?: string | undefined;

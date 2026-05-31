@@ -4,7 +4,8 @@ import {
   applePushPayload,
   defaultNotificationMessage,
   googlePushPayload,
-  shouldNotifyForServiceStatusChange
+  notificationTitle,
+  shouldNotifyForServiceUpdate
 } from "./payload.js";
 import { classifyApnsFailure } from "./apns.js";
 
@@ -15,29 +16,53 @@ const baseService = {
 };
 
 describe("push notification payloads", () => {
-  it("notifies only when an existing service changes to a known status", () => {
+  it("notifies when an existing service changes to a known status", () => {
     assert.equal(
-      shouldNotifyForServiceStatusChange(
+      shouldNotifyForServiceUpdate(
         { ...baseService, status: 1 },
         { ...baseService, status: -99 }
       ),
       true
     );
     assert.equal(
-      shouldNotifyForServiceStatusChange(
+      shouldNotifyForServiceUpdate(
         { ...baseService, status: -99 },
         { ...baseService, status: 0 }
       ),
       false
     );
     assert.equal(
-      shouldNotifyForServiceStatusChange(
+      shouldNotifyForServiceUpdate(
         { ...baseService, status: 1 },
         { ...baseService, status: 1 }
       ),
       false
     );
-    assert.equal(shouldNotifyForServiceStatusChange({ ...baseService, status: 1 }, null), false);
+    assert.equal(shouldNotifyForServiceUpdate({ ...baseService, status: 1 }, null), false);
+  });
+
+  it("notifies when information changes after an initial baseline has been recorded", () => {
+    assert.equal(
+      shouldNotifyForServiceUpdate(
+        { ...baseService, status: 1, notificationInfo: "Updated sailings" },
+        { ...baseService, status: 1, notificationInfo: "Original sailings" }
+      ),
+      true
+    );
+    assert.equal(
+      shouldNotifyForServiceUpdate(
+        { ...baseService, status: 1, notificationInfo: "Initial sailings" },
+        { ...baseService, status: 1 }
+      ),
+      false
+    );
+    assert.equal(
+      shouldNotifyForServiceUpdate(
+        { ...baseService, status: -99, notificationInfo: "Updated sailings" },
+        { ...baseService, status: 1, notificationInfo: "Original sailings" }
+      ),
+      false
+    );
   });
 
   it("keeps the mobile iOS and Android payload contract", () => {
@@ -45,13 +70,13 @@ describe("push notification payloads", () => {
 
     assert.equal(
       defaultNotificationMessage(disrupted),
-      "There is a disruption to the service Ardrossan (ARD) - Brodick (BRO)"
+      "There is a disruption affecting this service."
     );
     assert.deepEqual(applePushPayload(disrupted), {
       aps: {
         alert: {
-          title: "Arran",
-          body: "There is a disruption to the service Ardrossan (ARD) - Brodick (BRO)"
+          title: "Ardrossan - Brodick disrupted",
+          body: "There is a disruption affecting this service."
         },
         sound: "default"
       },
@@ -60,14 +85,39 @@ describe("push notification payloads", () => {
     assert.deepEqual(googlePushPayload(disrupted), {
       data: {
         service_id: "5",
-        title: "Arran sailings disrupted",
-        body: "Ardrossan (ARD) - Brodick (BRO)"
+        title: "Ardrossan - Brodick disrupted",
+        body: "There is a disruption affecting this service."
       },
       priority: "high",
       android: {
         priority: "HIGH"
       }
     });
+  });
+
+  it("describes information-only notifications without implying a status change", () => {
+    const normal = { ...baseService, status: 0 as const };
+
+    assert.deepEqual(applePushPayload(normal, "information-change").aps.alert, {
+      title: "Ardrossan - Brodick updated",
+      body: "Sailing information has been updated."
+    });
+    assert.deepEqual(googlePushPayload(normal, "information-change").data, {
+      service_id: "5",
+      title: "Ardrossan - Brodick updated",
+      body: "Sailing information has been updated."
+    });
+  });
+
+  it("keeps route-based titles short", () => {
+    assert.equal(
+      notificationTitle({
+        ...baseService,
+        route: "Scrabster - Stromness / Aberdeen - Kirkwall - Lerwick",
+        status: 1
+      }),
+      "Scrabster - Stromness / Aberdeen... disrupted"
+    );
   });
 });
 

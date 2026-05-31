@@ -7,7 +7,13 @@ import {
 } from "./db.js";
 import { sendApnsMessage } from "./apns.js";
 import { sendFcmMessage } from "./fcm.js";
-import { applePushPayload, googlePushPayload, shouldNotifyForServiceStatusChange, type PushService } from "./payload.js";
+import {
+  applePushPayload,
+  googlePushPayload,
+  shouldNotifyForServiceUpdate,
+  type PushNotificationReason,
+  type PushService
+} from "./payload.js";
 import { logger } from "../logger.js";
 
 export async function notifyForServiceStatusChanges(
@@ -17,19 +23,28 @@ export async function notifyForServiceStatusChanges(
 ): Promise<void> {
   for (const service of newServices) {
     const oldService = oldServices.get(service.serviceId) ?? null;
-    if (!shouldNotifyForServiceStatusChange(service, oldService)) {
+    if (!shouldNotifyForServiceUpdate(service, oldService)) {
       continue;
     }
 
     logger.debug(
-      { serviceId: service.serviceId, previousStatus: oldService?.status ?? null, nextStatus: service.status },
-      "Service status change qualifies for push notification"
+      {
+        serviceId: service.serviceId,
+        previousStatus: oldService?.status ?? null,
+        nextStatus: service.status,
+        informationChanged: oldService?.notificationInfo !== undefined
+          && service.notificationInfo !== oldService.notificationInfo
+      },
+      "Service update qualifies for push notification"
     );
-    await notifyForService(db, service);
+    const reason: PushNotificationReason = service.status === oldService?.status
+      ? "information-change"
+      : "status-change";
+    await notifyForService(db, service, reason);
   }
 }
 
-async function notifyForService(db: Database.Database, service: PushService): Promise<void> {
+async function notifyForService(db: Database.Database, service: PushService, reason: PushNotificationReason): Promise<void> {
   const installations = listPushInstallationsForService(db, service.serviceId);
   let successCount = 0;
   let invalidTokenCount = 0;
@@ -39,8 +54,8 @@ async function notifyForService(db: Database.Database, service: PushService): Pr
   for (const installation of installations) {
     try {
       const result = installation.deviceType === "IOS"
-        ? await sendApnsMessage(installation.deviceToken, applePushPayload(service))
-        : await sendFcmMessage(installation.deviceToken, googlePushPayload(service));
+        ? await sendApnsMessage(installation.deviceToken, applePushPayload(service, reason))
+        : await sendFcmMessage(installation.deviceToken, googlePushPayload(service, reason));
 
       if (result === "success") {
         recordPushSuccess(db, installation.installationId);

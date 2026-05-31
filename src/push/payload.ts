@@ -4,7 +4,10 @@ export type PushService = {
   area: string;
   route: string;
   status: ServiceStatus;
+  notificationInfo?: string | undefined;
 };
+
+export type PushNotificationReason = "status-change" | "information-change";
 
 export type ApplePushPayload = {
   aps: {
@@ -28,29 +31,39 @@ export type GooglePushPayload = {
     priority: "HIGH";
   };
 };
-export function shouldNotifyForServiceStatusChange(newService: PushService, oldService: PushService | null): boolean {
-  return oldService !== null && newService.status !== oldService.status && newService.status !== -99;
+const MAX_NOTIFICATION_TITLE_LENGTH = 50;
+
+export function shouldNotifyForServiceUpdate(newService: PushService, oldService: PushService | null): boolean {
+  if (oldService === null || newService.status === -99) {
+    return false;
+  }
+
+  return newService.status !== oldService.status
+    || (oldService.notificationInfo !== undefined && newService.notificationInfo !== oldService.notificationInfo);
 }
 
-export function defaultNotificationMessage(service: PushService): string {
+export function defaultNotificationMessage(service: PushService, reason: PushNotificationReason = "status-change"): string {
+  if (reason === "information-change") {
+    return "Sailing information has been updated.";
+  }
   if (service.status === 0) {
-    return `Normal services have resumed for ${service.route}`;
+    return "Services are operating normally.";
   }
   if (service.status === 1) {
-    return `There is a disruption to the service ${service.route}`;
+    return "There is a disruption affecting this service.";
   }
   if (service.status === 2) {
-    return `Sailings have been cancelled for ${service.route}`;
+    return "Sailings on this service have been cancelled.";
   }
   throw new Error("Do not message for unknown service");
 }
 
-export function applePushPayload(service: PushService): ApplePushPayload {
+export function applePushPayload(service: PushService, reason: PushNotificationReason = "status-change"): ApplePushPayload {
   return {
     aps: {
       alert: {
-        title: service.area,
-        body: defaultNotificationMessage(service)
+        title: notificationTitle(service, reason),
+        body: defaultNotificationMessage(service, reason)
       },
       sound: "default"
     },
@@ -58,22 +71,34 @@ export function applePushPayload(service: PushService): ApplePushPayload {
   };
 }
 
-export function googlePushPayload(service: PushService): GooglePushPayload {
-  const title = service.status === 0
-    ? `${service.area} sailings resumed`
-    : service.status === 1
-      ? `${service.area} sailings disrupted`
-      : `${service.area} sailings cancelled`;
-
+export function googlePushPayload(service: PushService, reason: PushNotificationReason = "status-change"): GooglePushPayload {
   return {
     data: {
       service_id: String(service.serviceId),
-      title,
-      body: service.route
+      title: notificationTitle(service, reason),
+      body: defaultNotificationMessage(service, reason)
     },
     priority: "high",
     android: {
       priority: "HIGH"
     }
   };
+}
+
+export function notificationTitle(service: PushService, reason: PushNotificationReason = "status-change"): string {
+  const suffix = reason === "information-change"
+    ? "updated"
+    : service.status === 0
+      ? "resumed"
+      : service.status === 1
+        ? "disrupted"
+        : "cancelled";
+  const route = service.route.replace(/\s*\([A-Z0-9]+\)/g, "").replace(/\s+/g, " ").trim();
+  const maxRouteLength = MAX_NOTIFICATION_TITLE_LENGTH - suffix.length - 1;
+  if (route.length <= maxRouteLength) {
+    return `${route} ${suffix}`;
+  }
+
+  const shortened = route.slice(0, maxRouteLength - 3).replace(/\s+\S*$/, "").replace(/[\s/,-]+$/, "");
+  return `${shortened || route.slice(0, maxRouteLength - 3)}... ${suffix}`;
 }
