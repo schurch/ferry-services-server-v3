@@ -1,4 +1,4 @@
-import { config } from "../shared/config.js";
+import { config } from "../config.js";
 import type {
   DepartureApiResponse,
   LocationApiResponse,
@@ -6,7 +6,206 @@ import type {
   ServiceApiResponse,
   ServiceListApiResponse
 } from "../api/schema.js";
-import type { WebsiteStats } from "./stats.js";
+import type { WebsiteStats } from "./db.js";
+
+export function dateInput(value: Date): string {
+  return formatDateInput(value);
+}
+
+export function isDateInput(value: unknown): value is string {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+export function renderServicesPage(services: Array<ServiceApiResponse | ServiceListApiResponse>): string {
+  const groups = new Map<string, Array<ServiceApiResponse | ServiceListApiResponse>>();
+  for (const service of services) {
+    const key = String(service.operator?.name ?? "Services");
+    groups.set(key, [...(groups.get(key) ?? []), service]);
+  }
+
+  const sections = [...groups.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([groupName, groupServices]) => {
+      const logo = hasCalmacBrand(groupName) ? `<img class="group-logo" src="/assets/calmac-logo.png" alt="" aria-hidden="true">` : "";
+      const rows = groupServices.map((service) => {
+        const status = statusName(service.status);
+        const rowAttrs = attributes({
+          class: "row-link",
+          href: `/service/${encodeURIComponent(String(service.service_id))}`,
+          "data-service-row": true,
+          "data-search": `${service.area} ${service.route}`.toLowerCase()
+        });
+        return `<a ${rowAttrs}>
+          <article class="row">
+            <span class="status-dot status-${status}" aria-hidden="true"></span>
+            <div class="row-main">
+              <strong>${escapeHtml(service.area)}</strong>
+              <div class="route">${escapeHtml(service.route)}</div>
+              <div class="status-text status-${status}">${escapeHtml(statusLabel(service.status))}</div>
+            </div>
+          </article>
+        </a>`;
+      }).join("");
+
+      return `<section class="group" data-service-group>
+        <h2 class="group-heading">${logo}<span>${escapeHtml(groupName)}</span></h2>
+        ${rows}
+      </section>`;
+    }).join("");
+
+  const content = `<div class="header">
+    <div class="controls">
+      <input class="search" type="search" placeholder="Search by area or route" aria-label="Search services" data-service-search>
+    </div>
+  </div>
+  <p class="muted" data-empty-search hidden>No services found.</p>
+  ${sections}`;
+
+  return layout("Scottish Ferries", pageChrome(content));
+}
+
+export function renderServicePage(service: PageService, departuresDate: string, now: Date): string {
+  const status = statusName(service.status);
+  const hasAdditionalInfo = Boolean(String(service.additional_info ?? "").trim());
+  const detailsLink = hasAdditionalInfo
+    ? `<p style="margin-bottom: 0"><a href="/service/${encodeURIComponent(String(service.service_id))}/info">View disruption details</a></p>`
+    : "";
+  const content = panel(`
+    <h1 class="title" style="margin-bottom: 0; font-size: 1.1rem">${escapeHtml(service.area)}</h1>
+    <div class="muted" style="margin-bottom: 12px">${escapeHtml(service.route)}</div>
+    <div class="status-inline status-text status-${status}">
+      <span class="status-dot status-${status}" aria-hidden="true"></span>
+      <span>${escapeHtml(statusLabel(service.status))}</span>
+    </div>
+    <p style="margin-top: 12px; margin-bottom: 0">${escapeHtml(disruptionText(service.status))}</p>
+    ${service.disruption_reason ? `<p class="small" style="margin-bottom: 0">${escapeHtml(service.disruption_reason)}</p>` : ""}
+    <p class="small muted" style="margin-bottom: 0">Last updated: ${escapeHtml(formatDateTime(service.last_updated_date ?? service.updated))}</p>
+    ${reliabilitySummary(service)}
+    ${detailsLink}
+    ${serviceMap(service)}
+    ${locationSummary(service)}
+    ${scheduledDepartures(service, departuresDate, now)}
+    ${operatorActions(service.operator)}
+  `, "service-summary");
+
+  return layout(`${service.area} - Scottish Ferries`, pageChrome(content));
+}
+
+export function renderAdditionalInfoPage(service: PageService): string {
+  const content = `<div class="header">
+    <h1 class="title">${escapeHtml(service.area)} Info</h1>
+  </div>
+  ${panel(String(service.additional_info ?? ""))}`;
+  return layout(`${service.area} Info - Scottish Ferries`, pageChrome(content));
+}
+
+export function renderNotFoundPage(message = "Page not found"): string {
+  return layout("Not Found - Scottish Ferries", pageChrome(panel(`<h1 class="title">Not Found</h1><p>${escapeHtml(message)}</p>`)));
+}
+
+export function renderPrivacyPolicyPage(): string {
+  const content = `<article class="panel policy">
+    <header class="policy-header">
+      <p class="policy-kicker">Effective date: April 27, 2026</p>
+      <h1>Privacy Policy</h1>
+      <p>This Privacy Policy explains how Scottish Ferries handles information in the iOS, Android, and web versions of the app.</p>
+    </header>
+    <section><h2>Overview</h2><p>Scottish Ferries provides ferry service information and does not require user accounts, names, email addresses, payment details, or location access to use the app.</p><p>We do not sell personal information, use advertising trackers, or use app data for cross-app or cross-site tracking.</p></section>
+    <section><h2>Information We Collect</h2><p>We do not collect personal information such as your name, email address, phone number, contacts, photos, payment information, or precise location.</p><p>The app may request ferry service data from our servers so that it can show current routes, schedules, disruption details, and related operational information. These requests are used to provide the app's core functionality.</p></section>
+    <section><h2>Crash and Diagnostic Data</h2><p>The native iOS and Android apps use Sentry, a third-party crash reporting and monitoring service, to help us identify and fix errors. If the app encounters a crash or technical issue, Sentry may receive diagnostic information such as:</p><ul><li>Crash logs and stack traces</li><li>Device type and operating system version</li><li>App version</li><li>Error timestamps and general diagnostic information</li></ul><p>This diagnostic information is used only to improve app stability, performance, and reliability. It is not used to identify you personally, track you across apps or websites, or serve advertising.</p></section>
+    <section><h2>How We Use Information</h2><p>Information handled by the app is used to:</p><ul><li>Provide ferry service information and app functionality</li><li>Identify and fix bugs</li><li>Improve app stability and performance</li><li>Protect the reliability and security of the service</li></ul></section>
+    <section><h2>Data Sharing</h2><p>Crash and diagnostic data may be shared with Sentry for the purposes described in this policy. Sentry processes this data as a service provider. You can read Sentry's privacy policy at <a href="https://sentry.io/privacy/" target="_blank" rel="noreferrer">https://sentry.io/privacy/</a>.</p><p>We do not sell your data or share it with advertisers or data brokers.</p></section>
+    <section><h2>Data Storage, Retention, and Deletion</h2><p>We do not store personal user account data because the app does not provide user accounts. Crash and diagnostic data may be retained by Sentry for a limited period so we can investigate and resolve issues.</p><p>If you contact us about a privacy request, we will respond using the contact details you provide and delete any support correspondence when it is no longer needed.</p></section>
+    <section><h2>Security</h2><p>Data transmitted by the app is sent using standard HTTPS encryption in transit. We limit third-party sharing to the service providers needed to operate and maintain the app.</p></section>
+    <section><h2>Your Choices and Rights</h2><p>Because Scottish Ferries does not require accounts or collect personal profile information, there is generally no account data to access, modify, or delete. You can stop future diagnostic data collection by uninstalling the app.</p><p>If you have a privacy question or request, contact us at <a href="mailto:stefan.church@gmail.com">stefan.church@gmail.com</a>.</p></section>
+    <section><h2>Children's Privacy</h2><p>Scottish Ferries is a general audience app and is not directed at children. We do not knowingly collect personal information from children.</p></section>
+    <section><h2>Changes to This Policy</h2><p>We may update this Privacy Policy from time to time. Changes will be posted on this page with an updated effective date.</p></section>
+    <section><h2>Contact</h2><p>Developer: Stefan Church<br>Privacy contact: <a href="mailto:stefan.church@gmail.com">stefan.church@gmail.com</a></p></section>
+  </article>`;
+  return layout("Privacy Policy - Scottish Ferries", pageChrome(content));
+}
+
+export function renderStatsPage(stats: WebsiteStats): string {
+  const deviceTotal = stats.deviceBreakdown.reduce((sum, row) => sum + row.count, 0);
+  const topSubscribed = stats.topSubscribedServices.length > 0
+    ? horizontalBars(stats.topSubscribedServices.map((row) => ({
+        label: row.area,
+        sublabel: row.route,
+        value: row.subscriberCount
+      })))
+    : `<p class="muted small">No service subscriptions have been recorded yet.</p>`;
+  const disruptionLeaders = stats.disruptionLeaders.length > 0
+    ? disruptionBars(stats)
+    : `<p class="muted small">No disrupted or cancelled service days have been recorded in the last 30 days.</p>`;
+
+  const content = `<section class="stats-hero panel">
+    <h1 class="title">Website Stats</h1>
+    <p class="small muted">Generated ${escapeHtml(formatDateTime(stats.generatedAt))}</p>
+  </section>
+
+  <section class="stats-grid">
+    ${metricCard("Installations", stats.overview.totalInstallations, "")}
+    ${metricCard("Subscribed", stats.overview.subscribedInstallations, "")}
+    ${metricCard("Tracked services", stats.overview.totalServices, `${formatNumber(stats.overview.normalServices)} normal right now`)}
+    ${metricCard("Live disruption count", stats.overview.disruptedServices + stats.overview.cancelledServices, `${formatNumber(stats.overview.cancelledServices)} cancelled, ${formatNumber(stats.overview.disruptedServices)} disrupted`)}
+  </section>
+
+  ${panel(`
+    ${sectionTitle("Device Mix")}
+    <div class="stats-split">
+      <div class="stats-split-track">
+        ${stats.deviceBreakdown.map((row) => `<div class="stats-split-segment stats-split-${row.deviceType.toLowerCase()}" style="width: ${percentage(row.count, deviceTotal)}"></div>`).join("")}
+      </div>
+      <div class="stats-legend">
+        ${stats.deviceBreakdown.map((row) => `<div class="stats-legend-item">
+          <span class="stats-legend-dot stats-split-${row.deviceType.toLowerCase()}"></span>
+          <span>${escapeHtml(row.deviceType === "IOS" ? "iOS" : "Android")}</span>
+          <strong>${escapeHtml(formatNumber(row.count))}</strong>
+          <span class="muted">${escapeHtml(percentage(row.count, deviceTotal))}</span>
+        </div>`).join("")}
+      </div>
+    </div>
+  `)}
+
+  ${panel(`
+    ${sectionTitle("Most Subscribed Services")}
+    ${topSubscribed}
+  `)}
+
+  ${panel(`
+    ${sectionTitle("Most Disrupted Services")}
+    ${disruptionLeaders}
+  `)}
+
+  ${panel(`
+    ${sectionTitle("Daily Service Status Mix")}
+    ${dailyTrendChart(stats)}
+  `)}
+
+  ${panel(`
+    ${sectionTitle("Current Network Status")}
+    ${horizontalBars([
+      {
+        label: "Normal services",
+        value: stats.overview.normalServices,
+        tone: "default"
+      },
+      {
+        label: "Disrupted services",
+        value: stats.overview.disruptedServices,
+        tone: "warning"
+      },
+      {
+        label: "Cancelled services",
+        value: stats.overview.cancelledServices,
+        tone: "danger"
+      }
+    ])}
+  `)}`;
+
+  return layout("Website Stats - Scottish Ferries", pageChrome(content));
+}
+
 type PageService = Omit<ServiceApiResponse, "locations"> & {
   locations: LocationApiResponse[];
 };
@@ -26,6 +225,7 @@ type AttributeValue = string | number | boolean | null | undefined;
 type LocationWithScheduledDepartures = LocationApiResponse & {
   scheduled_departures: DepartureApiResponse[];
 };
+
 const statusNames = ["normal", "disrupted", "cancelled"] as const;
 
 function escapeHtml(value: unknown): string {
@@ -81,6 +281,7 @@ function escapeJsonForScript(value: unknown): string {
     .replaceAll("\u2028", "\\u2028")
     .replaceAll("\u2029", "\\u2029");
 }
+
 function statusName(status: unknown): string {
   return statusNames[Number(status)] ?? "unknown";
 }
@@ -116,14 +317,6 @@ function formatDateInput(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
-}
-
-export function dateInput(value: Date): string {
-  return formatDateInput(value);
-}
-
-export function isDateInput(value: unknown): value is string {
-  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
 function formatDateTime(value: unknown): string {
@@ -162,6 +355,7 @@ function hasCalmacBrand(name: string): boolean {
   const normalized = name.trim().toLowerCase();
   return normalized.includes("calmac") || normalized.includes("caledonian macbrayne");
 }
+
 function layout(title: string, body: string): string {
   const ferryConfig = escapeJsonForScript({
     googleMapsApiKey: config.googleMapsApiKey
@@ -230,53 +424,7 @@ function pageChrome(content: string): string {
     ${siteFooter()}
   </main>`;
 }
-export function renderServicesPage(services: Array<ServiceApiResponse | ServiceListApiResponse>): string {
-  const groups = new Map<string, Array<ServiceApiResponse | ServiceListApiResponse>>();
-  for (const service of services) {
-    const key = String(service.operator?.name ?? "Services");
-    groups.set(key, [...(groups.get(key) ?? []), service]);
-  }
 
-  const sections = [...groups.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([groupName, groupServices]) => {
-      const logo = hasCalmacBrand(groupName) ? `<img class="group-logo" src="/assets/calmac-logo.png" alt="" aria-hidden="true">` : "";
-      const rows = groupServices.map((service) => {
-        const status = statusName(service.status);
-        const rowAttrs = attributes({
-          class: "row-link",
-          href: `/service/${encodeURIComponent(String(service.service_id))}`,
-          "data-service-row": true,
-          "data-search": `${service.area} ${service.route}`.toLowerCase()
-        });
-        return `<a ${rowAttrs}>
-          <article class="row">
-            <span class="status-dot status-${status}" aria-hidden="true"></span>
-            <div class="row-main">
-              <strong>${escapeHtml(service.area)}</strong>
-              <div class="route">${escapeHtml(service.route)}</div>
-              <div class="status-text status-${status}">${escapeHtml(statusLabel(service.status))}</div>
-            </div>
-          </article>
-        </a>`;
-      }).join("");
-
-      return `<section class="group" data-service-group>
-        <h2 class="group-heading">${logo}<span>${escapeHtml(groupName)}</span></h2>
-        ${rows}
-      </section>`;
-    }).join("");
-
-  const content = `<div class="header">
-    <div class="controls">
-      <input class="search" type="search" placeholder="Search by area or route" aria-label="Search services" data-service-search>
-    </div>
-  </div>
-  <p class="muted" data-empty-search hidden>No services found.</p>
-  ${sections}`;
-
-  return layout("Scottish Ferries", pageChrome(content));
-}
 function locationSummary(service: PageService): string {
   const locations = [...(service.locations ?? [])].sort((left, right) => String(left.name).localeCompare(String(right.name)));
   return `${sectionTitle("Locations")}
@@ -407,66 +555,6 @@ function reliabilitySummary(service: PageService): string {
   </p>`;
 }
 
-export function renderServicePage(service: PageService, departuresDate: string, now: Date): string {
-  const status = statusName(service.status);
-  const hasAdditionalInfo = Boolean(String(service.additional_info ?? "").trim());
-  const detailsLink = hasAdditionalInfo
-    ? `<p style="margin-bottom: 0"><a href="/service/${encodeURIComponent(String(service.service_id))}/info">View disruption details</a></p>`
-    : "";
-  const content = panel(`
-    <h1 class="title" style="margin-bottom: 0; font-size: 1.1rem">${escapeHtml(service.area)}</h1>
-    <div class="muted" style="margin-bottom: 12px">${escapeHtml(service.route)}</div>
-    <div class="status-inline status-text status-${status}">
-      <span class="status-dot status-${status}" aria-hidden="true"></span>
-      <span>${escapeHtml(statusLabel(service.status))}</span>
-    </div>
-    <p style="margin-top: 12px; margin-bottom: 0">${escapeHtml(disruptionText(service.status))}</p>
-    ${service.disruption_reason ? `<p class="small" style="margin-bottom: 0">${escapeHtml(service.disruption_reason)}</p>` : ""}
-    <p class="small muted" style="margin-bottom: 0">Last updated: ${escapeHtml(formatDateTime(service.last_updated_date ?? service.updated))}</p>
-    ${reliabilitySummary(service)}
-    ${detailsLink}
-    ${serviceMap(service)}
-    ${locationSummary(service)}
-    ${scheduledDepartures(service, departuresDate, now)}
-    ${operatorActions(service.operator)}
-  `, "service-summary");
-
-  return layout(`${service.area} - Scottish Ferries`, pageChrome(content));
-}
-
-export function renderAdditionalInfoPage(service: PageService): string {
-  const content = `<div class="header">
-    <h1 class="title">${escapeHtml(service.area)} Info</h1>
-  </div>
-  ${panel(String(service.additional_info ?? ""))}`;
-  return layout(`${service.area} Info - Scottish Ferries`, pageChrome(content));
-}
-export function renderNotFoundPage(message = "Page not found"): string {
-  return layout("Not Found - Scottish Ferries", pageChrome(panel(`<h1 class="title">Not Found</h1><p>${escapeHtml(message)}</p>`)));
-}
-
-export function renderPrivacyPolicyPage(): string {
-  const content = `<article class="panel policy">
-    <header class="policy-header">
-      <p class="policy-kicker">Effective date: April 27, 2026</p>
-      <h1>Privacy Policy</h1>
-      <p>This Privacy Policy explains how Scottish Ferries handles information in the iOS, Android, and web versions of the app.</p>
-    </header>
-    <section><h2>Overview</h2><p>Scottish Ferries provides ferry service information and does not require user accounts, names, email addresses, payment details, or location access to use the app.</p><p>We do not sell personal information, use advertising trackers, or use app data for cross-app or cross-site tracking.</p></section>
-    <section><h2>Information We Collect</h2><p>We do not collect personal information such as your name, email address, phone number, contacts, photos, payment information, or precise location.</p><p>The app may request ferry service data from our servers so that it can show current routes, schedules, disruption details, and related operational information. These requests are used to provide the app's core functionality.</p></section>
-    <section><h2>Crash and Diagnostic Data</h2><p>The native iOS and Android apps use Sentry, a third-party crash reporting and monitoring service, to help us identify and fix errors. If the app encounters a crash or technical issue, Sentry may receive diagnostic information such as:</p><ul><li>Crash logs and stack traces</li><li>Device type and operating system version</li><li>App version</li><li>Error timestamps and general diagnostic information</li></ul><p>This diagnostic information is used only to improve app stability, performance, and reliability. It is not used to identify you personally, track you across apps or websites, or serve advertising.</p></section>
-    <section><h2>How We Use Information</h2><p>Information handled by the app is used to:</p><ul><li>Provide ferry service information and app functionality</li><li>Identify and fix bugs</li><li>Improve app stability and performance</li><li>Protect the reliability and security of the service</li></ul></section>
-    <section><h2>Data Sharing</h2><p>Crash and diagnostic data may be shared with Sentry for the purposes described in this policy. Sentry processes this data as a service provider. You can read Sentry's privacy policy at <a href="https://sentry.io/privacy/" target="_blank" rel="noreferrer">https://sentry.io/privacy/</a>.</p><p>We do not sell your data or share it with advertisers or data brokers.</p></section>
-    <section><h2>Data Storage, Retention, and Deletion</h2><p>We do not store personal user account data because the app does not provide user accounts. Crash and diagnostic data may be retained by Sentry for a limited period so we can investigate and resolve issues.</p><p>If you contact us about a privacy request, we will respond using the contact details you provide and delete any support correspondence when it is no longer needed.</p></section>
-    <section><h2>Security</h2><p>Data transmitted by the app is sent using standard HTTPS encryption in transit. We limit third-party sharing to the service providers needed to operate and maintain the app.</p></section>
-    <section><h2>Your Choices and Rights</h2><p>Because Scottish Ferries does not require accounts or collect personal profile information, there is generally no account data to access, modify, or delete. You can stop future diagnostic data collection by uninstalling the app.</p><p>If you have a privacy question or request, contact us at <a href="mailto:stefan.church@gmail.com">stefan.church@gmail.com</a>.</p></section>
-    <section><h2>Children's Privacy</h2><p>Scottish Ferries is a general audience app and is not directed at children. We do not knowingly collect personal information from children.</p></section>
-    <section><h2>Changes to This Policy</h2><p>We may update this Privacy Policy from time to time. Changes will be posted on this page with an updated effective date.</p></section>
-    <section><h2>Contact</h2><p>Developer: Stefan Church<br>Privacy contact: <a href="mailto:stefan.church@gmail.com">stefan.church@gmail.com</a></p></section>
-  </article>`;
-  return layout("Privacy Policy - Scottish Ferries", pageChrome(content));
-}
-
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("en-GB").format(value);
 }
@@ -550,85 +638,4 @@ function dailyTrendChart(stats: WebsiteStats): string {
       </article>`;
     }).join("")}
   </div>`;
-}
-
-export function renderStatsPage(stats: WebsiteStats): string {
-  const deviceTotal = stats.deviceBreakdown.reduce((sum, row) => sum + row.count, 0);
-  const topSubscribed = stats.topSubscribedServices.length > 0
-    ? horizontalBars(stats.topSubscribedServices.map((row) => ({
-        label: row.area,
-        sublabel: row.route,
-        value: row.subscriberCount
-      })))
-    : `<p class="muted small">No service subscriptions have been recorded yet.</p>`;
-  const disruptionLeaders = stats.disruptionLeaders.length > 0
-    ? disruptionBars(stats)
-    : `<p class="muted small">No disrupted or cancelled service days have been recorded in the last 30 days.</p>`;
-
-  const content = `<section class="stats-hero panel">
-    <h1 class="title">Website Stats</h1>
-    <p class="small muted">Generated ${escapeHtml(formatDateTime(stats.generatedAt))}</p>
-  </section>
-
-  <section class="stats-grid">
-    ${metricCard("Installations", stats.overview.totalInstallations, "")}
-    ${metricCard("Subscribed", stats.overview.subscribedInstallations, "")}
-    ${metricCard("Tracked services", stats.overview.totalServices, `${formatNumber(stats.overview.normalServices)} normal right now`)}
-    ${metricCard("Live disruption count", stats.overview.disruptedServices + stats.overview.cancelledServices, `${formatNumber(stats.overview.cancelledServices)} cancelled, ${formatNumber(stats.overview.disruptedServices)} disrupted`)}
-  </section>
-
-  ${panel(`
-    ${sectionTitle("Device Mix")}
-    <div class="stats-split">
-      <div class="stats-split-track">
-        ${stats.deviceBreakdown.map((row) => `<div class="stats-split-segment stats-split-${row.deviceType.toLowerCase()}" style="width: ${percentage(row.count, deviceTotal)}"></div>`).join("")}
-      </div>
-      <div class="stats-legend">
-        ${stats.deviceBreakdown.map((row) => `<div class="stats-legend-item">
-          <span class="stats-legend-dot stats-split-${row.deviceType.toLowerCase()}"></span>
-          <span>${escapeHtml(row.deviceType === "IOS" ? "iOS" : "Android")}</span>
-          <strong>${escapeHtml(formatNumber(row.count))}</strong>
-          <span class="muted">${escapeHtml(percentage(row.count, deviceTotal))}</span>
-        </div>`).join("")}
-      </div>
-    </div>
-  `)}
-
-  ${panel(`
-    ${sectionTitle("Most Subscribed Services")}
-    ${topSubscribed}
-  `)}
-
-  ${panel(`
-    ${sectionTitle("Most Disrupted Services")}
-    ${disruptionLeaders}
-  `)}
-
-  ${panel(`
-    ${sectionTitle("Daily Service Status Mix")}
-    ${dailyTrendChart(stats)}
-  `)}
-
-  ${panel(`
-    ${sectionTitle("Current Network Status")}
-    ${horizontalBars([
-      {
-        label: "Normal services",
-        value: stats.overview.normalServices,
-        tone: "default"
-      },
-      {
-        label: "Disrupted services",
-        value: stats.overview.disruptedServices,
-        tone: "warning"
-      },
-      {
-        label: "Cancelled services",
-        value: stats.overview.cancelledServices,
-        tone: "danger"
-      }
-    ])}
-  `)}`;
-
-  return layout("Website Stats - Scottish Ferries", pageChrome(content));
 }

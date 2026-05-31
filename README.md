@@ -6,7 +6,14 @@ Scottish Ferries server, public web pages, API, background jobs, SQLite migratio
 
 ```text
 ferry-services/
-  src/            Fastify routes, HTML pages, API, DB access, jobs and push code
+  src/
+    api/          Fastify server, JSON API routes and API DB access
+    fetchers/     External data fetchers, each with colocated DB access and tests
+    ingesters/    Batch data ingestion pipelines, each with colocated DB access and tests
+    web/          HTML routes, pages and web-specific DB access
+    push/         Push notification delivery and payloads
+    offline-snapshot/
+                  Offline SQLite snapshot generation
   public/         Static web assets served by Fastify
   sqlite/         SQLite migrations and seed data
   test/           Node test runner tests
@@ -70,7 +77,7 @@ TransXChange ingest requires `TRAVELLINE_FTP_ADDRESS`, `TRAVELLINE_FTP_USERNAME`
 
 ## Configuration
 
-Runtime state and secrets live at the repository root:
+Runtime state and secrets live at the project root:
 
 ```text
 .env

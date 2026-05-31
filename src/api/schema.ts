@@ -35,6 +35,14 @@ export const AddServiceRequestSchema = Type.Object({
   service_id: Type.Integer()
 }, { $id: "AddServiceRequest" });
 
+export const ServiceIDParams = Type.Object({
+  serviceID: Type.Integer()
+});
+
+export const ServiceDetailQuery = Type.Object({
+  departuresDate: Type.Optional(Type.String({ format: "date" }))
+});
+
 export const OrganisationResponseSchema = Type.Object({
   id: Type.Integer(),
   name: Type.String(),

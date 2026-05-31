@@ -1,9 +1,9 @@
 import { Type } from "@sinclair/typebox";
 import type { FastifyInstance } from "fastify";
-import type { openDatabase } from "../shared/database.js";
-import { getService, listServices } from "../features/services/read-model.js";
-import { serviceToApi } from "../features/services/wire.js";
-import { ServiceDetailQuery, ServiceIDParams } from "../app/route-support.js";
+import type { openDatabase } from "../database.js";
+import { ServiceDetailQuery, ServiceIDParams } from "../api/schema.js";
+import { serviceToApi } from "../api/wire.js";
+import { getService, listServices } from "../api/db.js";
 import {
   dateInput,
   isDateInput,
@@ -14,7 +14,7 @@ import {
   renderServicesPage,
   renderStatsPage
 } from "./pages.js";
-import { getWebsiteStats } from "./stats.js";
+import { getWebsiteStats } from "./db.js";
 
 export function registerWebRoutes(
   app: FastifyInstance,
