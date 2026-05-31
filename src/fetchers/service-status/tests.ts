@@ -207,6 +207,25 @@ describe("service status observations", () => {
     }
   });
 
+  it("does not track NorthLink operations news as notification information", () => {
+    const { db, cleanup } = createTestDatabase();
+    try {
+      saveServices(db, [{
+        serviceId: 1000,
+        area: "Orkney & Shetland",
+        route: "Scrabster - Stromness / Aberdeen - Kirkwall - Lerwick",
+        status: 0,
+        additionalInfo: "<p>Shared NorthLink operations news</p>",
+        organisationId: 2,
+        updated: "2026-05-20 12:00:00"
+      }]);
+
+      assert.equal(listServicesById(db, [1000]).get(1000)?.notificationInfo, undefined);
+    } finally {
+      cleanup();
+    }
+  });
+
   it("captures one reliability summary per service day", () => {
     const { db, cleanup } = createTestDatabase();
     try {

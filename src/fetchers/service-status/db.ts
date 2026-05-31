@@ -62,7 +62,7 @@ function notificationInfo(
   if (organisationId === 1) {
     return storedCalMacNotificationInfo(db, serviceId);
   }
-  return [2, 3, 6].includes(organisationId) ? additionalInfo ?? undefined : undefined;
+  return [3, 6].includes(organisationId) ? additionalInfo ?? undefined : undefined;
 }
 
 function storedCalMacNotificationInfo(db: Database.Database, serviceId: number): string | undefined {

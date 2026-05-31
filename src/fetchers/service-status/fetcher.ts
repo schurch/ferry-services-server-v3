@@ -261,7 +261,6 @@ async function scrapeNorthLink(): Promise<ScrapedService[]> {
       status: statusClass.includes("service-disruptions") ? SERVICE_STATUS.disrupted : SERVICE_STATUS.normal,
       sourceStatus: statusClass,
       additionalInfo: htmlOrUndefined(additionalInfo),
-      notificationInfo: htmlOrUndefined(additionalInfo),
       organisationId: 2,
       notices: noticeFromHtml({
         title: "Operations news",
