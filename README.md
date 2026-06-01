@@ -70,13 +70,6 @@ npm run ingest:transxchange
 npm run generate:offline-snapshot
 ```
 
-Weather fetching requires `OPENWEATHERMAP_APPID`. Rail departure fetching requires `RAIL_DATA_API_KEY`.
-Vessel fetching uses MarineTraffic polling by default; set `AIS_STREAM_API_KEY` to keep the same fetcher service connected to AISStream while it periodically polls MarineTraffic for fallback position coverage.
-
-TransXChange ingest requires `TRAVELLINE_FTP_ADDRESS`, `TRAVELLINE_FTP_USERNAME`, and `TRAVELLINE_FTP_PASSWORD` when no local directory or ZIP file is passed. Offline snapshot generation writes `offline/snapshot.sqlite3` and `offline/snapshot.meta.json`; the API serves the SQLite file from `/api/offline/snapshot.sqlite3`.
-
-CalMac information-change push notifications can optionally use a local Ollama model to shorten current changed facts. The integration is fail-open: unsafe output, timeouts and an unavailable model use the generic information-change message instead. Set `OLLAMA_URL=http://ollama:11434` in production to enable it. The model is unloaded after each request to release RAM between scrapes.
-
 ## Configuration
 
 Runtime state and secrets live at the project root:
@@ -99,8 +92,12 @@ Core runtime variables:
 NODE_ENV=production
 HOST=127.0.0.1
 PORT=4322
+TRUST_PROXY=true
+LOG_LEVEL=info
 DATABASE_PATH=./data/ferry-services.sqlite3
 OPENWEATHERMAP_APPID=
+GOOGLE_MAPS_API_KEY=
+AIS_STREAM_API_KEY=
 RAIL_DATA_API_KEY=
 TRAVELLINE_FTP_ADDRESS=
 TRAVELLINE_FTP_USERNAME=
@@ -108,6 +105,20 @@ TRAVELLINE_FTP_PASSWORD=
 OLLAMA_URL=
 OLLAMA_MODEL=qwen3:1.7b
 OLLAMA_TIMEOUT_MS=30000
+```
+
+Optional Sentry reporting:
+
+```text
+SERVER_SENTRY_DSN=
+SCRAPER_SENTRY_DSN=
+WEATHER_FETCHER_SENTRY_DSN=
+VESSEL_FETCHER_SENTRY_DSN=
+RAIL_DEPARTURE_FETCHER_SENTRY_DSN=
+TIMETABLE_DOCUMENT_SCRAPER_SENTRY_DSN=
+TRANSXCHANGE_INGESTER_SENTRY_DSN=
+OFFLINE_SNAPSHOT_GENERATOR_SENTRY_DSN=
+SENTRY_TRACES_SAMPLE_RATE=0.1
 ```
 
 Direct APNs push requires:
@@ -145,16 +156,6 @@ npm test
 npm run build
 ```
 
-On pushes to `main`, CI builds and publishes:
-
-```text
-stefanchurch/ferry-services:latest
-stefanchurch/ferry-services:<git-sha>
-```
-
-Production pulls the prebuilt image with Docker Compose. The VPS does not run `npm install` or compile native dependencies.
-Deployments also start Ollama and pull the configured `OLLAMA_MODEL` into a persistent Docker volume. The application only calls Ollama when `OLLAMA_URL` is configured.
-
 Manual deploy:
 
 ```bash
@@ -167,12 +168,8 @@ Production database backup:
 APP_ROOT=/home/stefan/ferry-services-server-v3 scripts/backup-prod-db.sh
 ```
 
-That uses host `sqlite3` and SQLite's `.backup` command to write a hot backup to `data/backups/ferry-services-<timestamp>.sqlite3` by default. Pass a path argument to override the output file.
-
 Production database restore:
 
 ```bash
 APP_ROOT=/home/stefan/ferry-services-server-v3 scripts/restore-prod-db.sh data/backups/ferry-services-2026-05-16T18-00-00Z.sqlite3
 ```
-
-That stops the compose stack, snapshots the current live DB to a `*.pre-restore-<timestamp>.sqlite3` file next to it, restores the chosen backup, removes any stale SQLite WAL/SHM sidecars, and starts the stack again.
