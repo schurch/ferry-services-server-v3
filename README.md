@@ -82,8 +82,6 @@ offline/
   snapshot.sqlite3
   snapshot.meta.json
 secrets/
-  AuthKey_....p8
-  google-service-account.json
 ```
 
 Core runtime variables:
@@ -127,7 +125,7 @@ Direct APNs push requires:
 APNS_TEAM_ID=
 APNS_KEY_ID=
 APNS_BUNDLE_ID=
-APNS_PRIVATE_KEY_PATH=secrets/AuthKey_LV4KJJD8W4.p8
+APNS_PRIVATE_KEY_PATH=
 APNS_PRODUCTION=true
 ```
 
@@ -135,7 +133,7 @@ Direct FCM HTTP v1 push requires:
 
 ```text
 FCM_PROJECT_ID=
-GOOGLE_APPLICATION_CREDENTIALS=secrets/google-service-account.json
+GOOGLE_APPLICATION_CREDENTIALS=
 ```
 
 For Docker deployments, also set:
