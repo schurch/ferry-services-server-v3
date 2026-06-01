@@ -48,6 +48,105 @@
     return days + " day" + (days === 1 ? "" : "s") + " ago";
   }
 
+  function formatTime(value) {
+    var date = new Date(String(value));
+    if (Number.isNaN(date.getTime())) return "-";
+    return new Intl.DateTimeFormat("en-GB", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "Europe/London"
+    }).format(date);
+  }
+
+  function scheduledDepartureRoutes(service) {
+    var routes = [];
+    var byRoute = {};
+
+    (service.locations || []).slice().sort(function (left, right) {
+      return String(left.name).localeCompare(String(right.name));
+    }).forEach(function (location) {
+      (location.scheduled_departures || []).forEach(function (departure) {
+        var destination = departure.destination || {};
+        var key = String(location.id) + ":" + String(destination.id);
+        if (!byRoute[key]) {
+          byRoute[key] = {
+            destinationId: destination.id,
+            originName: location.name,
+            destinationName: destination.name || "Destination",
+            departures: []
+          };
+          routes.push(byRoute[key]);
+        }
+        byRoute[key].departures.push(departure);
+      });
+    });
+
+    routes.forEach(function (route) {
+      route.departures.sort(function (left, right) {
+        return String(left.departure).localeCompare(String(right.departure));
+      });
+    });
+    return routes;
+  }
+
+  function scheduledDeparturesHtml(service) {
+    var routes = scheduledDepartureRoutes(service);
+    if (routes.length === 0) {
+      return '<p class="small muted departures-empty">No scheduled departures for this date.</p>';
+    }
+
+    return routes.map(function (route) {
+      return '<article class="departures-route" data-destination-id="' + escapeHtml(route.destinationId) + '">'
+        + "<h3>" + escapeHtml(route.originName) + " to " + escapeHtml(route.destinationName) + "</h3>"
+        + route.departures.map(function (departure) {
+          var hasDeparted = new Date(String(departure.departure)).getTime() < Date.now();
+          return '<div class="departure-row' + (hasDeparted ? " departure-dim" : "") + '">'
+            + "<span>" + escapeHtml(formatTime(departure.departure)) + "</span>"
+            + "<span>" + escapeHtml(formatTime(departure.arrival)) + "</span>"
+            + "</div>";
+        }).join("")
+        + "</article>";
+    }).join("");
+  }
+
+  function initScheduledDepartures(section) {
+    var form = section.querySelector("[data-departures-form]");
+    var input = section.querySelector("[data-departures-date]");
+    var list = section.querySelector("[data-departures-list]");
+    var serviceId = section.getAttribute("data-service-id");
+    var requestId = 0;
+    if (!form || !input || !list || !serviceId) return;
+
+    function loadDepartures() {
+      var departuresDate = input.value;
+      if (!departuresDate) return;
+      var currentRequestId = ++requestId;
+      input.disabled = true;
+
+      fetch("/api/services/" + encodeURIComponent(serviceId) + "?departuresDate=" + encodeURIComponent(departuresDate), {
+        headers: { Accept: "application/json" }
+      }).then(function (response) {
+        if (!response.ok) throw new Error("Could not load scheduled departures.");
+        return response.json();
+      }).then(function (service) {
+        if (currentRequestId !== requestId) return;
+        list.innerHTML = scheduledDeparturesHtml(service);
+        window.history.replaceState(null, "", form.action + "?departuresDate=" + encodeURIComponent(departuresDate));
+      }).catch(function () {
+        if (currentRequestId !== requestId) return;
+        list.innerHTML = '<p class="small muted departures-empty">Could not load scheduled departures.</p>';
+      }).finally(function () {
+        if (currentRequestId === requestId) input.disabled = false;
+      });
+    }
+
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      loadDepartures();
+    });
+    input.addEventListener("change", loadDepartures);
+  }
+
   function isDarkTheme() {
     return document.documentElement.getAttribute("data-theme") === "dark";
   }
@@ -221,6 +320,7 @@
   }
 
   Array.prototype.slice.call(document.querySelectorAll("[data-service-map]")).forEach(initServiceMap);
+  Array.prototype.slice.call(document.querySelectorAll("[data-scheduled-departures]")).forEach(initScheduledDepartures);
 
   var search = document.querySelector("[data-service-search]");
   if (!search) return;

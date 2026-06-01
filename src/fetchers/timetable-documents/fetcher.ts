@@ -345,13 +345,12 @@ function filterTimetableLinks(links: DocumentLink[]): DocumentLink[] {
   });
 }
 
-function calMacTimetableTitle(timetable: CalMacTimetable): string {
-  const routeName = typeof timetable.route?.name === "string" ? timetable.route.name : "CalMac timetable";
+export function calMacTimetableTitle(timetable: CalMacTimetable): string {
   const title = typeof timetable.title === "string" ? timetable.title : "Timetable";
   const validFrom = humanDate(timetable.validFrom);
   const validUntil = humanDate(timetable.validUntil);
   const validRange = validFrom && validUntil ? ` (${validFrom} to ${validUntil})` : "";
-  return `${routeName}: ${title}${validRange}`;
+  return `${title}${validRange}`;
 }
 
 async function fetchCalMacTimetables(): Promise<CalMacTimetable[]> {

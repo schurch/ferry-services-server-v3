@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { parse } from "node-html-parser";
 import {
+  calMacTimetableTitle,
   hasOnlyHistoricalYears,
   htmlText,
   humanDate,
@@ -153,6 +154,18 @@ describe("Orkney timetable document service mapping", () => {
 });
 
 describe("timetable document title normalization", () => {
+  it("does not repeat the CalMac route in the document title", () => {
+    assert.equal(
+      calMacTimetableTitle({
+        title: "Summer 2026",
+        route: { name: "Ardrossan - Brodick" },
+        validFrom: "2026-03-27T00:00:00.000Z",
+        validUntil: "2026-10-18T00:00:00.000Z"
+      }),
+      "Summer 2026 (27 Mar 2026 to 18 Oct 2026)"
+    );
+  });
+
   it("uses the filename when the link text is only a call to action", () => {
     assert.equal(
       normalizeTimetableDocumentTitle(

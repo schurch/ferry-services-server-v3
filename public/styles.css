@@ -428,6 +428,10 @@ button {
   opacity: 0.5;
 }
 
+.departures-empty {
+  margin: 0;
+}
+
 .inline-buttons {
   display: flex;
   gap: 8px;

@@ -8,11 +8,6 @@
   <p style="margin-top: 12px; margin-bottom: 0"><%= it.disruptionText %></p>
   <% if (it.service.disruption_reason) { %><p class="small" style="margin-bottom: 0"><%= it.service.disruption_reason %></p><% } %>
   <p class="small muted" style="margin-bottom: 0">Last updated: <%= it.lastUpdated %></p>
-  <% if (it.reliability) { %>
-    <p class="small muted" style="margin-bottom: 0">
-      Last 30 days: <%= it.reliability.disrupted %> disrupted day<%= it.reliability.disrupted === 1 ? "" : "s" %>, <%= it.reliability.cancelled %> cancelled day<%= it.reliability.cancelled === 1 ? "" : "s" %> across <%= it.reliability.scheduledSailings %> scheduled sailing<%= it.reliability.scheduledSailings === 1 ? "" : "s" %>.
-    </p>
-  <% } %>
   <% if (it.detailsHref) { %><p style="margin-bottom: 0"><a href="<%= it.detailsHref %>">View disruption details</a></p><% } %>
   <div class="panel-map-bleed">
     <div class="map-shell">
@@ -37,25 +32,31 @@
     <% }) %>
   </div>
   <% if (it.scheduledDepartures) { %>
-    <div class="panel-divider"></div>
-    <div class="section-header">
-      <h2 class="title card-subtitle">Scheduled Departures</h2>
-      <form class="date-picker" method="get" action="/service/<%= it.scheduledDepartures.serviceId %>">
-        <span class="sr-only">Scheduled departures date</span>
-        <input class="date-input" type="date" name="departuresDate" value="<%= it.scheduledDepartures.departuresDate %>" aria-label="Scheduled departures date" onchange="this.form.submit()">
-      </form>
-    </div>
-    <% it.scheduledDepartures.routes.forEach(function(route) { %>
-      <article class="departures-route" data-destination-id="<%= route.destinationId %>">
-        <h3><%= route.originName %> to <%= route.destinationName %></h3>
-        <% route.departures.forEach(function(departure) { %>
-          <div class="departure-row <%= departure.hasDeparted ? "departure-dim" : "" %>">
-            <span><%= departure.departure %></span>
-            <span><%= departure.arrival %></span>
-          </div>
+    <section data-scheduled-departures data-service-id="<%= it.scheduledDepartures.serviceId %>">
+      <div class="panel-divider"></div>
+      <div class="section-header">
+        <h2 class="title card-subtitle">Scheduled Departures</h2>
+        <form class="date-picker" method="get" action="/service/<%= it.scheduledDepartures.serviceId %>" data-departures-form>
+          <span class="sr-only">Scheduled departures date</span>
+          <input class="date-input" type="date" name="departuresDate" value="<%= it.scheduledDepartures.departuresDate %>" aria-label="Scheduled departures date" data-departures-date>
+          <noscript><button type="submit">Show</button></noscript>
+        </form>
+      </div>
+      <div data-departures-list aria-live="polite">
+        <% if (it.scheduledDepartures.routes.length === 0) { %><p class="small muted departures-empty">No scheduled departures for this date.</p><% } %>
+        <% it.scheduledDepartures.routes.forEach(function(route) { %>
+          <article class="departures-route" data-destination-id="<%= route.destinationId %>">
+            <h3><%= route.originName %> to <%= route.destinationName %></h3>
+            <% route.departures.forEach(function(departure) { %>
+              <div class="departure-row <%= departure.hasDeparted ? "departure-dim" : "" %>">
+                <span><%= departure.departure %></span>
+                <span><%= departure.arrival %></span>
+              </div>
+            <% }) %>
+          </article>
         <% }) %>
-      </article>
-    <% }) %>
+      </div>
+    </section>
   <% } %>
   <% if (it.operator) { %>
     <div class="panel-divider"></div>

@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { buildApp } from "../server.js";
 import { deleteStaleInstallations } from "./db.js";
 import { createTestDatabase, type TestDatabase } from "../test-helper.js";
+import { renderServicePage } from "../web/render.js";
 
 let currentDb: TestDatabase | null = null;
 let currentApp: FastifyInstance | null = null;
@@ -30,6 +31,7 @@ describe("Service API responses", () => {
     assert.match(listResponse.headers["content-type"] as string, /text\/html/);
     assert.match(listResponse.body, /Scottish Ferries/);
     assert.match(listResponse.body, /Search by area or route/);
+    assert.ok(listResponse.body.indexOf('setAttribute("data-theme"') < listResponse.body.indexOf('href="/styles.css"'));
 
     const detailResponse = await app.inject({ method: "GET", url: "/service/1?departuresDate=2026-05-25" });
     assert.equal(detailResponse.statusCode, 200);
@@ -38,6 +40,28 @@ describe("Service API responses", () => {
     assert.match(detailResponse.body, /map-shell/);
     assert.match(detailResponse.body, /Locations/);
     assert.match(detailResponse.body, /Caledonian MacBrayne/);
+
+    const clientResponse = await app.inject({ method: "GET", url: "/client.js" });
+    assert.equal(clientResponse.statusCode, 200);
+    assert.match(clientResponse.body, /fetch\("\/api\/services\/"/);
+    assert.match(clientResponse.body, /window\.history\.replaceState/);
+  });
+
+  it("keeps the scheduled departures picker visible when a selected date has no sailings", () => {
+    const page = renderServicePage({
+      service_id: 1,
+      area: "ARRAN",
+      route: "Ardrossan - Brodick",
+      status: 0,
+      locations: [],
+      vessels: [],
+      scheduled_departures_available: true,
+      updated: "2026-05-25T12:00:00.000Z"
+    }, "2026-05-25", new Date("2026-05-25T12:00:00.000Z"));
+
+    assert.match(page, /data-departures-form/);
+    assert.match(page, /No scheduled departures for this date/);
+    assert.doesNotMatch(page, /onchange="this\.form\.submit\(\)"/);
   });
 
   it("includes full operator contact details in list and detail responses", async () => {

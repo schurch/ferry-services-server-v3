@@ -52,7 +52,6 @@ export function renderServicePage(service: PageService, departuresDate: string, 
     statusLabel: statusLabel(service.status),
     disruptionText: disruptionText(service.status),
     lastUpdated: formatDateTime(service.last_updated_date ?? service.updated),
-    reliability: reliabilityForTemplate(service),
     detailsHref: hasAdditionalInfo ? `/service/${encodeURIComponent(String(service.service_id))}/info` : undefined,
     map: mapForTemplate(service),
     locations: locationsForTemplate(service),
@@ -315,7 +314,6 @@ function scheduledDeparturesForTemplate(service: PageService, departuresDate: st
   const locations = service.locations
     .filter(hasScheduledDepartures)
     .sort((left, right) => String(left.name).localeCompare(String(right.name)));
-  if (locations.length === 0) return undefined;
 
   return {
     serviceId: service.service_id,
@@ -360,18 +358,6 @@ function operatorForTemplate(operator: OrganisationApiResponse | undefined) {
     name: operator.name,
     hasLogo: hasCalmacBrand(String(operator.name)),
     links
-  };
-}
-
-function reliabilityForTemplate(service: PageService) {
-  const period = service.reliability?.status_breakdown?.last_30_days;
-  if (!period || Number(period.observed_operating_days) === 0) return undefined;
-  const disrupted = Number(period.day_statuses?.disrupted?.days ?? 0);
-  const cancelled = Number(period.day_statuses?.cancelled?.days ?? 0);
-  return {
-    disrupted,
-    cancelled,
-    scheduledSailings: Number(period.scheduled_sailings)
   };
 }
 
