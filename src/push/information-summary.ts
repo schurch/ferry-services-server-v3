@@ -1,4 +1,5 @@
 import { config } from "../config.js";
+import { logger } from "../logger.js";
 
 const FALLBACK_MESSAGE = "Sailing information has been updated.";
 const MAX_BODY_LENGTH = 120;
@@ -35,7 +36,10 @@ export async function summariseInformationChange(
   const previousNotices = parseNotices(previousInfo);
   const nextNotices = parseNotices(nextInfo);
   if (previousNotices === null || nextNotices === null) {
-    return fallback();
+    return fallback("invalid-notice-payload", {
+      previousInfoPresent: previousInfo !== undefined,
+      nextInfoPresent: nextInfo !== undefined
+    });
   }
   if (normaliseNotices(previousNotices) === normaliseNotices(nextNotices)) {
     return { body: null, outcome: "suppressed" };
@@ -44,7 +48,9 @@ export async function summariseInformationChange(
   const facts = currentChangedFacts(previousNotices, nextNotices);
   const ollamaUrl = options.ollamaUrl === undefined ? config.ollama.url : options.ollamaUrl;
   if (!ollamaUrl || facts.length === 0) {
-    return fallback();
+    return fallback(!ollamaUrl ? "ollama-disabled" : "no-changed-facts", {
+      factCount: facts.length
+    });
   }
 
   const model = options.model ?? config.ollama.model;
@@ -62,7 +68,9 @@ export async function summariseInformationChange(
       return { body: first, outcome: "generated" };
     }
     if (first.length <= MAX_BODY_LENGTH) {
-      return fallback();
+      return fallback("generated-body-rejected", {
+        generatedLength: first.length
+      });
     }
 
     const retryPrompt = [
@@ -71,9 +79,16 @@ export async function summariseInformationChange(
       `Text: ${first}`
     ].join(" ");
     const retry = await generate(ollamaUrl, model, timeoutMs, fetchFn, retryPrompt);
-    return validBody(retry) ? { body: retry, outcome: "generated" } : fallback();
-  } catch {
-    return fallback();
+    if (validBody(retry)) {
+      return { body: retry, outcome: "generated" };
+    }
+    return fallback("retry-body-rejected", {
+      generatedLength: retry.length
+    });
+  } catch (error) {
+    return fallback("ollama-request-failed", {
+      error: error instanceof Error ? error.message : String(error)
+    });
   }
 }
 
@@ -186,7 +201,8 @@ function validBody(value: string): boolean {
     && !/^(?:here(?:'s| is)|notification:)/i.test(value);
 }
 
-function fallback(): InformationSummary {
+function fallback(reason: string, details: Record<string, unknown> = {}): InformationSummary {
+  logger.warn({ reason, ...details }, "Falling back to default information-change summary");
   return { body: FALLBACK_MESSAGE, outcome: "fallback" };
 }
 

@@ -54,6 +54,15 @@ async function notifyForService(
   const installations = listPushInstallationsForService(db, service.serviceId);
   let body: string | undefined;
   if (installations.length > 0 && reason === "information-change") {
+    logger.info(
+      {
+        serviceId: service.serviceId,
+        installationCount: installations.length,
+        previousInfoPresent: oldService?.notificationInfo !== undefined,
+        nextInfoPresent: service.notificationInfo !== undefined
+      },
+      "Preparing information-change push message"
+    );
     const summary = await summariseInformationChange(oldService?.notificationInfo, service.notificationInfo);
     if (summary.outcome === "suppressed") {
       logger.info({ serviceId: service.serviceId }, "Suppressing push for non-material information change");
