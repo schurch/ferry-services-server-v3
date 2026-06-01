@@ -566,9 +566,11 @@ export function getService(
       .sort((left, right) => new Date(left.departure).getTime() - new Date(right.departure).getTime())
       .find((departure) => new Date(departure.departure) > now)
   ]).filter((entry): entry is [number, DepartureResponse] => entry[1] !== undefined));
+  const locations = createServiceLocationLookup(db, serviceId, locationDepartures, nextDepartureLookup);
   return serviceResponse(row, {
     scheduledServices: hasScheduledDepartures(db, serviceId) ? new Set([serviceId]) : new Set(),
-    locations: createServiceLocationLookup(db, serviceId, locationDepartures, nextDepartureLookup),
+    locations,
+    vesselLocations: createVesselLocationLookup(locations, nextDepartures),
     organisations: createServiceOrganisationLookup(db, serviceId),
     vessels: createSingleServiceVesselLookup(db, serviceId, now),
     timetableDocuments: createServiceTimetableDocumentLookup(db, serviceId),
@@ -892,6 +894,19 @@ function createServiceLocationLookup(
   }
 
   return new Map([[serviceId, rows.map((row) => locationResponse(row, { scheduledDepartures, nextDepartures, weatherByLocation, nextRailByLocation }))]]);
+}
+
+function createVesselLocationLookup(
+  locationsByService: Map<number, LocationResponse[]>,
+  scheduledDepartures: Map<number, DepartureResponse[]>
+): Map<number, LocationResponse[]> {
+  return new Map([...locationsByService].map(([serviceId, locations]) => [
+    serviceId,
+    locations.map(({ scheduledDepartures: _requestedDateDepartures, ...location }) => ({
+      ...location,
+      ...(scheduledDepartures.has(location.id) ? { scheduledDepartures: scheduledDepartures.get(location.id) ?? [] } : {})
+    }))
+  ]));
 }
 
 function createOrganisationLookup(db: Database.Database): Map<number, OrganisationResponse> {

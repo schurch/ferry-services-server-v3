@@ -628,6 +628,7 @@ describe("Vessel API formatting", () => {
     );
 
     assert.equal(getService(db, 9100, "2026-03-16")?.vessels[0]?.voyage?.estimatedArrival, "2026-03-16T10:41:00.000Z");
+    assert.equal(getService(db, 9100, "2026-03-17")?.vessels[0]?.voyage?.estimatedArrival, "2026-03-16T10:41:00.000Z");
   });
 });
 

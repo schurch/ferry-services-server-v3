@@ -127,6 +127,7 @@ export function serviceResponse(
   lookups: {
     scheduledServices: Set<number>;
     locations: Map<number, LocationResponse[]>;
+    vesselLocations?: Map<number, LocationResponse[]>;
     organisations: Map<number, OrganisationResponse>;
     vessels: Map<number, VesselRow[]>;
     timetableDocuments?: Map<number, TimetableDocumentResponse[]>;
@@ -135,6 +136,7 @@ export function serviceResponse(
   now = new Date()
 ): ServiceResponse {
   const locations = lookups.locations.get(row.service_id) ?? [];
+  const vesselLocations = lookups.vesselLocations?.get(row.service_id) ?? locations;
   const operator = lookups.organisations.get(row.service_id);
   const reliability = lookups.reliability?.get(row.service_id);
   return {
@@ -147,7 +149,7 @@ export function serviceResponse(
     ...(row.disruption_reason !== null ? { disruptionReason: row.disruption_reason } : {}),
     ...(row.last_updated_date !== null ? { lastUpdatedDate: timestampResponse(row.last_updated_date) } : {}),
     vessels: (lookups.vessels.get(row.service_id) ?? []).flatMap((vessel) => {
-      const response = serviceVesselResponse(vessel, locations, now);
+      const response = serviceVesselResponse(vessel, vesselLocations, now);
       return response ? [response] : [];
     }),
     ...(operator !== undefined ? { operator } : {}),
