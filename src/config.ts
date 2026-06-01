@@ -24,6 +24,9 @@ function loadConfig() {
     TRAVELLINE_FTP_ADDRESS: Type.Optional(Type.String()),
     TRAVELLINE_FTP_USERNAME: Type.Optional(Type.String()),
     TRAVELLINE_FTP_PASSWORD: Type.Optional(Type.String()),
+    OLLAMA_URL: Type.Optional(Type.String()),
+    OLLAMA_MODEL: Type.Optional(Type.String({ minLength: 1 })),
+    OLLAMA_TIMEOUT_MS: Type.Optional(Type.Integer({ minimum: 1 })),
     SERVER_SENTRY_DSN: Type.Optional(Type.String()),
     SCRAPER_SENTRY_DSN: Type.Optional(Type.String()),
     WEATHER_FETCHER_SENTRY_DSN: Type.Optional(Type.String()),
@@ -56,6 +59,9 @@ function loadConfig() {
     TRAVELLINE_FTP_ADDRESS: process.env.TRAVELLINE_FTP_ADDRESS,
     TRAVELLINE_FTP_USERNAME: process.env.TRAVELLINE_FTP_USERNAME,
     TRAVELLINE_FTP_PASSWORD: process.env.TRAVELLINE_FTP_PASSWORD,
+    OLLAMA_URL: process.env.OLLAMA_URL,
+    OLLAMA_MODEL: process.env.OLLAMA_MODEL,
+    OLLAMA_TIMEOUT_MS: parseOptionalInteger(process.env.OLLAMA_TIMEOUT_MS),
     SERVER_SENTRY_DSN: process.env.SERVER_SENTRY_DSN,
     SCRAPER_SENTRY_DSN: process.env.SCRAPER_SENTRY_DSN,
     WEATHER_FETCHER_SENTRY_DSN: process.env.WEATHER_FETCHER_SENTRY_DSN,
@@ -88,6 +94,11 @@ function loadConfig() {
       address: env.TRAVELLINE_FTP_ADDRESS ?? null,
       username: env.TRAVELLINE_FTP_USERNAME ?? null,
       password: env.TRAVELLINE_FTP_PASSWORD ?? null
+    },
+    ollama: {
+      url: env.OLLAMA_URL ?? null,
+      model: env.OLLAMA_MODEL ?? "qwen3:1.7b",
+      timeoutMs: env.OLLAMA_TIMEOUT_MS ?? 8000
     },
     sentry: {
       serverDsn: env.SERVER_SENTRY_DSN ?? null,

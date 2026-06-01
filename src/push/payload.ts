@@ -58,12 +58,16 @@ export function defaultNotificationMessage(service: PushService, reason: PushNot
   throw new Error("Do not message for unknown service");
 }
 
-export function applePushPayload(service: PushService, reason: PushNotificationReason = "status-change"): ApplePushPayload {
+export function applePushPayload(
+  service: PushService,
+  reason: PushNotificationReason = "status-change",
+  body = defaultNotificationMessage(service, reason)
+): ApplePushPayload {
   return {
     aps: {
       alert: {
         title: notificationTitle(service, reason),
-        body: defaultNotificationMessage(service, reason)
+        body
       },
       sound: "default"
     },
@@ -71,12 +75,16 @@ export function applePushPayload(service: PushService, reason: PushNotificationR
   };
 }
 
-export function googlePushPayload(service: PushService, reason: PushNotificationReason = "status-change"): GooglePushPayload {
+export function googlePushPayload(
+  service: PushService,
+  reason: PushNotificationReason = "status-change",
+  body = defaultNotificationMessage(service, reason)
+): GooglePushPayload {
   return {
     data: {
       service_id: String(service.serviceId),
       title: notificationTitle(service, reason),
-      body: defaultNotificationMessage(service, reason)
+      body
     },
     priority: "high",
     android: {

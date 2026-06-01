@@ -75,6 +75,8 @@ Vessel fetching uses MarineTraffic polling by default; set `AIS_STREAM_API_KEY` 
 
 TransXChange ingest requires `TRAVELLINE_FTP_ADDRESS`, `TRAVELLINE_FTP_USERNAME`, and `TRAVELLINE_FTP_PASSWORD` when no local directory or ZIP file is passed. Offline snapshot generation writes `offline/snapshot.sqlite3` and `offline/snapshot.meta.json`; the API serves the SQLite file from `/api/offline/snapshot.sqlite3`.
 
+CalMac information-change push notifications can optionally use a local Ollama model to shorten current changed facts. The integration is fail-open: unsafe output, timeouts and an unavailable model use the generic information-change message instead. Set `OLLAMA_URL=http://ollama:11434` in production to enable it. The model is unloaded after each request to release RAM between scrapes.
+
 ## Configuration
 
 Runtime state and secrets live at the project root:
@@ -103,6 +105,9 @@ RAIL_DATA_API_KEY=
 TRAVELLINE_FTP_ADDRESS=
 TRAVELLINE_FTP_USERNAME=
 TRAVELLINE_FTP_PASSWORD=
+OLLAMA_URL=
+OLLAMA_MODEL=qwen3:1.7b
+OLLAMA_TIMEOUT_MS=8000
 ```
 
 Direct APNs push requires:
@@ -148,6 +153,7 @@ stefanchurch/ferry-services:<git-sha>
 ```
 
 Production pulls the prebuilt image with Docker Compose. The VPS does not run `npm install` or compile native dependencies.
+Deployments also start Ollama and pull the configured `OLLAMA_MODEL` into a persistent Docker volume. The application only calls Ollama when `OLLAMA_URL` is configured.
 
 Manual deploy:
 

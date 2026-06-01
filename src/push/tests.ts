@@ -8,6 +8,7 @@ import {
   shouldNotifyForServiceUpdate
 } from "./payload.js";
 import { classifyApnsFailure } from "./apns.js";
+import { summariseInformationChange } from "./information-summary.js";
 
 const baseService = {
   serviceId: 5,
@@ -109,6 +110,14 @@ describe("push notification payloads", () => {
     });
   });
 
+  it("uses an information summary override in mobile payloads", () => {
+    const normal = { ...baseService, status: 0 as const };
+    const body = "MV Isle of Islay will operate stern only.";
+
+    assert.equal(applePushPayload(normal, "information-change", body).aps.alert.body, body);
+    assert.equal(googlePushPayload(normal, "information-change", body).data.body, body);
+  });
+
   it("keeps route-based titles short", () => {
     assert.equal(
       notificationTitle({
@@ -118,6 +127,91 @@ describe("push notification payloads", () => {
       }),
       "Scrabster - Stromness / Aberdeen... disrupted"
     );
+  });
+});
+
+describe("information-change summaries", () => {
+  it("suppresses punctuation-only notice changes", async () => {
+    const summary = await summariseInformationChange(
+      notices("No hot food service on 1 June ."),
+      notices("No hot food service on 1 June."),
+      { ollamaUrl: null }
+    );
+
+    assert.deepEqual(summary, { body: null, outcome: "suppressed" });
+  });
+
+  it("rewrites current changed facts with Ollama", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    const summary = await summariseInformationChange(
+      notices("The 13:30 sailing is delayed."),
+      notices("The delay is resolved. The vessel departed Oban. ETA Castlebay 19:40."),
+      {
+        ollamaUrl: "http://ollama:11434/",
+        fetchFn: (async (_input, init) => {
+          requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          return Response.json({ response: "Vessel departed Oban. ETA Castlebay 19:40." });
+        }) as typeof fetch
+      }
+    );
+
+    assert.deepEqual(summary, { body: "Vessel departed Oban. ETA Castlebay 19:40.", outcome: "generated" });
+    assert.equal(requestBody?.model, "qwen3:1.7b");
+    assert.equal(requestBody?.keep_alive, "0");
+    assert.equal(requestBody?.think, false);
+    assert.match(String(requestBody?.prompt), /The delay is resolved/);
+    assert.doesNotMatch(String(requestBody?.prompt), /13:30 sailing is delayed/);
+  });
+
+  it("retries long output once with a shortening prompt", async () => {
+    let requestCount = 0;
+    const summary = await summariseInformationChange(
+      notices("Previous information."),
+      notices("Changed passenger information."),
+      {
+        ollamaUrl: "http://ollama:11434",
+        fetchFn: (async () => {
+          requestCount += 1;
+          return Response.json({
+            response: requestCount === 1 ? "x".repeat(121) : "Changed passenger information."
+          });
+        }) as typeof fetch
+      }
+    );
+
+    assert.equal(requestCount, 2);
+    assert.deepEqual(summary, { body: "Changed passenger information.", outcome: "generated" });
+  });
+
+  it("falls back when generated output is unsafe", async () => {
+    const summary = await summariseInformationChange(
+      notices("Previous information."),
+      notices("Changed passenger information."),
+      {
+        ollamaUrl: "http://ollama:11434",
+        fetchFn: (async () => Response.json({ response: "Changed passenger information. 👍" })) as typeof fetch
+      }
+    );
+
+    assert.deepEqual(summary, { body: "Sailing information has been updated.", outcome: "fallback" });
+  });
+
+  it("falls back without calling Ollama for removed-only notices", async () => {
+    let called = false;
+    const summary = await summariseInformationChange(
+      notices("Electronic message boards are out of order."),
+      JSON.stringify([]),
+      {
+        ollamaUrl: "http://ollama:11434",
+        fetchFn: (async () => {
+          called = true;
+          return Response.json({ response: "Should not be used." });
+        }) as typeof fetch
+      }
+    );
+
+    assert.equal(called, false);
+    assert.deepEqual(summary, { body: "Sailing information has been updated.", outcome: "fallback" });
   });
 });
 
@@ -131,3 +225,7 @@ describe("APNs failure handling", () => {
     assert.equal(classifyApnsFailure(400, JSON.stringify({ reason: "DeviceTokenNotForTopic" })), "error");
   });
 });
+
+function notices(detail: string): string {
+  return JSON.stringify([{ title: "Current update", detail, disruptionReason: null }]);
+}

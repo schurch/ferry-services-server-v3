@@ -15,6 +15,7 @@ import {
   type PushService
 } from "./payload.js";
 import { logger } from "../logger.js";
+import { summariseInformationChange } from "./information-summary.js";
 
 export async function notifyForServiceStatusChanges(
   db: Database.Database,
@@ -40,12 +41,27 @@ export async function notifyForServiceStatusChanges(
     const reason: PushNotificationReason = service.status === oldService?.status
       ? "information-change"
       : "status-change";
-    await notifyForService(db, service, reason);
+    await notifyForService(db, service, oldService, reason);
   }
 }
 
-async function notifyForService(db: Database.Database, service: PushService, reason: PushNotificationReason): Promise<void> {
+async function notifyForService(
+  db: Database.Database,
+  service: PushService,
+  oldService: PushService | null,
+  reason: PushNotificationReason
+): Promise<void> {
   const installations = listPushInstallationsForService(db, service.serviceId);
+  let body: string | undefined;
+  if (installations.length > 0 && reason === "information-change") {
+    const summary = await summariseInformationChange(oldService?.notificationInfo, service.notificationInfo);
+    if (summary.outcome === "suppressed") {
+      logger.info({ serviceId: service.serviceId }, "Suppressing push for non-material information change");
+      return;
+    }
+    body = summary.body ?? undefined;
+    logger.info({ serviceId: service.serviceId, summaryOutcome: summary.outcome }, "Prepared information-change push message");
+  }
   let successCount = 0;
   let invalidTokenCount = 0;
   let skippedCount = 0;
@@ -54,8 +70,8 @@ async function notifyForService(db: Database.Database, service: PushService, rea
   for (const installation of installations) {
     try {
       const result = installation.deviceType === "IOS"
-        ? await sendApnsMessage(installation.deviceToken, applePushPayload(service, reason))
-        : await sendFcmMessage(installation.deviceToken, googlePushPayload(service, reason));
+        ? await sendApnsMessage(installation.deviceToken, applePushPayload(service, reason, body))
+        : await sendFcmMessage(installation.deviceToken, googlePushPayload(service, reason, body));
 
       if (result === "success") {
         recordPushSuccess(db, installation.installationId);
