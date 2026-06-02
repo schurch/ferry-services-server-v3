@@ -8,8 +8,6 @@ if (!databasePath || !Number.isInteger(scenarioLimit) || scenarioLimit < 1) {
 }
 
 const db = new Database(databasePath, { readonly: true });
-const ollamaUrl = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434";
-const model = process.env.OLLAMA_MODEL ?? "qwen3:1.7b";
 const observations = db.prepare(`
   SELECT
     o.observation_id,
@@ -67,13 +65,14 @@ for (const scenario of scenarios.slice(-scenarioLimit).reverse()) {
   let facts = "";
   const started = performance.now();
   const summary = await summariseInformationChange(scenario.previousInfo, scenario.nextInfo, {
-    ollamaUrl,
-    model,
+    route: scenario.route,
     timeoutMs: 120000,
     fetchFn: (async (input, init) => {
-      const body = JSON.parse(String(init?.body)) as { prompt?: unknown };
-      const prompt = typeof body.prompt === "string" ? body.prompt : "";
-      facts = prompt.includes("Facts: ") ? prompt.split("Facts: ", 2)[1] : facts;
+      const body = JSON.parse(String(init?.body)) as { input?: unknown };
+      if (typeof body.input === "string") {
+        const requestInput = JSON.parse(body.input) as { changedFacts?: unknown };
+        facts = typeof requestInput.changedFacts === "string" ? requestInput.changedFacts : facts;
+      }
       return fetch(input, init);
     }) as typeof fetch
   });

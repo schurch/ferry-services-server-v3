@@ -20,12 +20,6 @@ x-app: &app
   restart: unless-stopped
 
 services:
-  ollama:
-    image: ollama/ollama
-    volumes:
-      - ollama:/root/.ollama
-    restart: unless-stopped
-
   api:
     <<: *app
     command: ["npm", "run", "start"]
@@ -55,6 +49,3 @@ services:
   transxchange-ingester:
     <<: *app
     command: ["sh", "-lc", "while true; do npm run ingest:transxchange && npm run generate:offline-snapshot; sleep 86400; done"]
-
-volumes:
-  ollama:

@@ -4,7 +4,8 @@ import { logger } from "../logger.js";
 const FALLBACK_MESSAGE = "Sailing information has been updated.";
 const MAX_BODY_LENGTH = 120;
 const MAX_FACTS_LENGTH = 1500;
-const OLLAMA_KEEP_ALIVE = "5m";
+const MAX_CONTEXT_LENGTH = 8000;
+const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 
 type Notice = {
   title: string;
@@ -12,8 +13,8 @@ type Notice = {
   disruptionReason: string | null;
 };
 
-type OllamaResponse = {
-  response?: unknown;
+type OpenAiResponse = {
+  output?: unknown;
 };
 
 export type InformationSummaryOutcome = "generated" | "fallback" | "suppressed";
@@ -24,7 +25,9 @@ export type InformationSummary = {
 };
 
 type SummaryOptions = {
-  ollamaUrl?: string | null;
+  apiKey?: string | null;
+  apiUrl?: string;
+  route?: string;
   model?: string;
   timeoutMs?: number;
   fetchFn?: typeof fetch;
@@ -48,7 +51,7 @@ export async function summariseInformationChange(
   }
 
   const { facts, removed } = currentChangedFacts(previousNotices, nextNotices);
-  const ollamaUrl = options.ollamaUrl === undefined ? config.ollama.url : options.ollamaUrl;
+  const apiKey = options.apiKey === undefined ? config.openAi.apiKey : options.apiKey;
   if (facts.length === 0) {
     return removed
       ? fallback("removed-only-change")
@@ -56,48 +59,42 @@ export async function summariseInformationChange(
   }
 
   const factsText = facts.join(" ");
-  if (!ollamaUrl || factsText.length > MAX_FACTS_LENGTH) {
-    return fallback(!ollamaUrl ? "ollama-disabled" : "changed-facts-too-long", {
+  if (!apiKey || factsText.length > MAX_FACTS_LENGTH) {
+    return fallback(!apiKey ? "openai-disabled" : "changed-facts-too-long", {
       factCount: facts.length,
       factsLength: factsText.length
     });
   }
 
-  const model = options.model ?? config.ollama.model;
-  const timeoutMs = options.timeoutMs ?? config.ollama.timeoutMs;
+  const previousContext = noticesText(previousNotices);
+  const currentContext = noticesText(nextNotices);
+  if (previousContext.length > MAX_CONTEXT_LENGTH || currentContext.length > MAX_CONTEXT_LENGTH) {
+    return fallback("notice-context-too-long", {
+      previousLength: previousContext.length,
+      currentLength: currentContext.length
+    });
+  }
+
+  const apiUrl = options.apiUrl ?? OPENAI_RESPONSES_URL;
+  const model = options.model ?? config.openAi.model;
+  const timeoutMs = options.timeoutMs ?? config.openAi.timeoutMs;
   const fetchFn = options.fetchFn ?? fetch;
-  const firstPrompt = [
-    "Rewrite exactly these facts as one plain-text ferry push notification under 100 characters.",
-    "Do not add facts, context, markdown or emoji.",
-    "Do not omit operational state words that appear in the facts.",
-    `Facts: ${factsText}`
-  ].join(" ");
 
   try {
-    const first = await generate(ollamaUrl, model, timeoutMs, fetchFn, firstPrompt);
-    if (validBody(first) && preservesSafetyTerms(factsText, first)) {
-      return { body: first, outcome: "generated" };
+    const summary = await generate(apiUrl, apiKey, model, timeoutMs, fetchFn, {
+      ...(options.route === undefined ? {} : { route: options.route }),
+      previousStatus: previousContext,
+      currentStatus: currentContext,
+      changedFacts: factsText
+    });
+    if (validBody(summary) && preservesSafetyTerms(factsText, summary)) {
+      return { body: summary, outcome: "generated" };
     }
-    if (first.length <= MAX_BODY_LENGTH) {
-      return fallback("generated-body-rejected", {
-        generatedLength: first.length
-      });
-    }
-
-    const retryPrompt = [
-      "Shorten this to at most 100 characters.",
-      "Return only one plain-text sentence. Do not add facts, context, markdown or emoji.",
-      `Text: ${first}`
-    ].join(" ");
-    const retry = await generate(ollamaUrl, model, timeoutMs, fetchFn, retryPrompt);
-    if (validBody(retry) && preservesSafetyTerms(factsText, retry)) {
-      return { body: retry, outcome: "generated" };
-    }
-    return fallback("retry-body-rejected", {
-      generatedLength: retry.length
+    return fallback("generated-body-rejected", {
+      generatedLength: summary.length
     });
   } catch (error) {
-    return fallback("ollama-request-failed", {
+    return fallback("openai-request-failed", {
       error: error instanceof Error ? error.message : String(error)
     });
   }
@@ -192,6 +189,14 @@ function noticeText(notice: Notice): string {
   return [notice.title, notice.detail, notice.disruptionReason].filter(Boolean).map((value) => plainText(value ?? "")).join(". ");
 }
 
+function noticesText(notices: Notice[]): string {
+  return notices.map((notice) => [
+    `Title: ${plainText(notice.title)}`,
+    `Detail: ${plainText(notice.detail)}`,
+    notice.disruptionReason ? `Disruption reason: ${plainText(notice.disruptionReason)}` : null
+  ].filter(Boolean).join("\n")).join("\n\n");
+}
+
 function splitParagraphs(value: string): string[] {
   return value
     .split(/\n\s*\n+/)
@@ -263,34 +268,81 @@ function plainText(value: string): string {
 }
 
 async function generate(
-  ollamaUrl: string,
+  apiUrl: string,
+  apiKey: string,
   model: string,
   timeoutMs: number,
   fetchFn: typeof fetch,
-  prompt: string
+  input: {
+    route?: string;
+    previousStatus: string;
+    currentStatus: string;
+    changedFacts: string;
+  }
 ): Promise<string> {
-  const response = await fetchFn(`${ollamaUrl.replace(/\/$/, "")}/api/generate`, {
+  const response = await fetchFn(apiUrl, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json"
+    },
     body: JSON.stringify({
       model,
-      stream: false,
-      think: false,
-      keep_alive: OLLAMA_KEEP_ALIVE,
-      prompt,
-      options: {
-        temperature: 0,
-        num_predict: 80
+      instructions: [
+        "Write one plain-text ferry push notification describing only the changed facts.",
+        "Use the previous and current notices as context.",
+        "Keep the summary under 120 characters.",
+        "Preserve operational state words such as cancelled, closed, suspended, no, not, without and unavailable.",
+        "Do not add facts, markdown, emoji, labels or commentary."
+      ].join(" "),
+      input: JSON.stringify(input),
+      text: {
+        format: {
+          type: "json_schema",
+          name: "information_change_summary",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              summary: { type: "string", maxLength: MAX_BODY_LENGTH }
+            },
+            required: ["summary"],
+            additionalProperties: false
+          }
+        }
       }
     }),
     signal: AbortSignal.timeout(timeoutMs)
   });
   if (!response.ok) {
-    throw new Error(`Ollama request failed with HTTP ${response.status}`);
+    throw new Error(`OpenAI request failed with HTTP ${response.status}`);
   }
 
-  const body = await response.json() as OllamaResponse;
-  return typeof body.response === "string" ? body.response.trim() : "";
+  const body = await response.json() as OpenAiResponse;
+  const outputText = extractOutputText(body);
+  if (outputText === null) {
+    throw new Error("OpenAI response did not include output_text");
+  }
+  const payload: unknown = JSON.parse(outputText);
+  return isRecord(payload) && typeof payload.summary === "string" ? payload.summary.trim() : "";
+}
+
+function extractOutputText(body: OpenAiResponse): string | null {
+  if (!Array.isArray(body.output)) {
+    return null;
+  }
+
+  for (const item of body.output) {
+    if (!isRecord(item) || !Array.isArray(item.content)) {
+      continue;
+    }
+    for (const content of item.content) {
+      if (isRecord(content) && content.type === "output_text" && typeof content.text === "string") {
+        return content.text;
+      }
+    }
+  }
+  return null;
 }
 
 function validBody(value: string): boolean {

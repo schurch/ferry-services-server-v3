@@ -135,36 +135,43 @@ describe("information-change summaries", () => {
     const summary = await summariseInformationChange(
       notices("No hot food service on 1 June ."),
       notices("No hot food service on 1 June."),
-      { ollamaUrl: null }
+      { apiKey: null }
     );
 
     assert.deepEqual(summary, { body: null, outcome: "suppressed" });
   });
 
-  it("rewrites current changed facts with Ollama", async () => {
+  it("rewrites current changed facts with OpenAI", async () => {
     let requestBody: Record<string, unknown> | undefined;
+    let requestUrl = "";
+    let authorization = "";
     const summary = await summariseInformationChange(
       notices("The 13:30 sailing is delayed."),
       notices("The delay is resolved. The vessel departed Oban. ETA Castlebay 19:40."),
       {
-        ollamaUrl: "http://ollama:11434/",
-        fetchFn: (async (_input, init) => {
+        apiKey: "test-key",
+        fetchFn: (async (input, init) => {
+          requestUrl = String(input);
+          authorization = String((init?.headers as Record<string, string>)?.authorization);
           requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
-          return Response.json({ response: "Vessel departed Oban. ETA Castlebay 19:40." });
+          return openAiResponse("Vessel departed Oban. ETA Castlebay 19:40.");
         }) as typeof fetch
       }
     );
 
     assert.deepEqual(summary, { body: "Vessel departed Oban. ETA Castlebay 19:40.", outcome: "generated" });
-    assert.equal(requestBody?.model, "qwen3:1.7b");
-    assert.equal(requestBody?.keep_alive, "5m");
-    assert.equal(requestBody?.think, false);
-    assert.match(String(requestBody?.prompt), /The delay is resolved/);
-    assert.doesNotMatch(String(requestBody?.prompt), /13:30 sailing is delayed/);
+    assert.equal(requestUrl, "https://api.openai.com/v1/responses");
+    assert.equal(authorization, "Bearer test-key");
+    assert.equal(requestBody?.model, "gpt-5.4-nano-2026-03-17");
+    const input = JSON.parse(String(requestBody?.input)) as Record<string, string>;
+    assert.match(input.changedFacts ?? "", /The delay is resolved/);
+    assert.doesNotMatch(input.changedFacts ?? "", /13:30 sailing is delayed/);
+    assert.match(input.previousStatus ?? "", /13:30 sailing is delayed/);
+    assert.match(input.currentStatus ?? "", /ETA Castlebay 19:40/);
   });
 
-  it("sends only changed current paragraphs for an existing notice", async () => {
-    let prompt = "";
+  it("sends full notice context and changed current paragraphs for an existing notice", async () => {
+    let requestInput: Record<string, string> = {};
     const summary = await summariseInformationChange(
       notices([
         "MV Alfred will continue to operate the Troon - Brodick service until Sunday 18 October.",
@@ -177,42 +184,44 @@ describe("information-change summaries", () => {
         "**Sailings between Thursday 17 September - Thursday 24 September:** Bookings are currently closed."
       ].join("\n\n")),
       {
-        ollamaUrl: "http://ollama:11434",
+        apiKey: "test-key",
         fetchFn: (async (_input, init) => {
-          prompt = String(JSON.parse(String(init?.body)).prompt);
-          return Response.json({ response: "Bookings are open until 16 Sep and closed from 17-24 Sep." });
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          requestInput = JSON.parse(String(body.input)) as Record<string, string>;
+          return openAiResponse("Bookings are open until 16 Sep and closed from 17-24 Sep.");
         }) as typeof fetch
       }
     );
 
     assert.deepEqual(summary, { body: "Bookings are open until 16 Sep and closed from 17-24 Sep.", outcome: "generated" });
-    assert.match(prompt, /Sailings up to Wednesday 16 September/);
-    assert.match(prompt, /Sailings between Thursday 17 September - Thursday 24 September/);
-    assert.doesNotMatch(prompt, /MV Alfred will continue/);
-    assert.doesNotMatch(prompt, /Thursday 10 September/);
-    assert.doesNotMatch(prompt, /Friday 11 September/);
+    assert.match(requestInput.changedFacts ?? "", /Sailings up to Wednesday 16 September/);
+    assert.match(requestInput.changedFacts ?? "", /Sailings between Thursday 17 September - Thursday 24 September/);
+    assert.doesNotMatch(requestInput.changedFacts ?? "", /MV Alfred will continue/);
+    assert.doesNotMatch(requestInput.changedFacts ?? "", /Thursday 10 September/);
+    assert.match(requestInput.previousStatus ?? "", /Thursday 10 September/);
+    assert.match(requestInput.currentStatus ?? "", /Wednesday 16 September/);
   });
 
   it("suppresses reordered paragraphs", async () => {
     const summary = await summariseInformationChange(
       notices("First paragraph.\n\nSecond paragraph."),
       notices("Second paragraph.\n\nFirst paragraph."),
-      { ollamaUrl: "http://ollama:11434" }
+      { apiKey: "test-key" }
     );
 
     assert.deepEqual(summary, { body: null, outcome: "suppressed" });
   });
 
-  it("falls back without calling Ollama for removed-only paragraphs", async () => {
+  it("falls back without calling OpenAI for removed-only paragraphs", async () => {
     let called = false;
     const summary = await summariseInformationChange(
       notices("Passenger lounge is open.\n\nNo hot meals are available."),
       notices("Passenger lounge is open."),
       {
-        ollamaUrl: "http://ollama:11434",
+        apiKey: "test-key",
         fetchFn: (async () => {
           called = true;
-          return Response.json({ response: "Should not be used." });
+          return openAiResponse("Should not be used.");
         }) as typeof fetch
       }
     );
@@ -222,63 +231,65 @@ describe("information-change summaries", () => {
   });
 
   it("keeps unchanged trailing list context for a changed introductory fact", async () => {
-    let prompt = "";
+    let changedFacts = "";
     const summary = await summariseInformationChange(
       notices("The following sailings will be cancelled:\n\n**Depart** Oban 14:00\n\n**Depart** Lismore 15:00\n\nService resumes at 17:15."),
       notices("The following sailings are **cancelled**:\n\n**Depart** Oban - 14:00\n\n**Depart** Lismore - 15:00\n\nService resumes at 17:15."),
       {
-        ollamaUrl: "http://ollama:11434",
+        apiKey: "test-key",
         fetchFn: (async (_input, init) => {
-          prompt = String(JSON.parse(String(init?.body)).prompt);
-          return Response.json({ response: "Oban 14:00 and Lismore 15:00 sailings are cancelled." });
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          changedFacts = String((JSON.parse(String(body.input)) as Record<string, string>).changedFacts);
+          return openAiResponse("Oban 14:00 and Lismore 15:00 sailings are cancelled.");
         }) as typeof fetch
       }
     );
 
     assert.deepEqual(summary, { body: "Oban 14:00 and Lismore 15:00 sailings are cancelled.", outcome: "generated" });
-    assert.match(prompt, /Depart Oban - 14:00/);
-    assert.match(prompt, /Depart Lismore - 15:00/);
-    assert.match(prompt, /Service resumes at 17:15/);
+    assert.match(changedFacts, /Depart Oban - 14:00/);
+    assert.match(changedFacts, /Depart Lismore - 15:00/);
+    assert.match(changedFacts, /Service resumes at 17:15/);
   });
 
   it("suppresses standalone link-only additions", async () => {
     const summary = await summariseInformationChange(
       notices("Passenger lounge is open."),
       notices("Passenger lounge is open.\n\n[View passenger rights information.][1]\n\n[1]: https://example.com"),
-      { ollamaUrl: "http://ollama:11434" }
+      { apiKey: "test-key" }
     );
 
     assert.deepEqual(summary, { body: null, outcome: "suppressed" });
   });
 
   it("sends the full text for a new notice", async () => {
-    let prompt = "";
+    let changedFacts = "";
     const summary = await summariseInformationChange(
       JSON.stringify([]),
       notices("The passenger lounge is closed."),
       {
-        ollamaUrl: "http://ollama:11434",
+        apiKey: "test-key",
         fetchFn: (async (_input, init) => {
-          prompt = String(JSON.parse(String(init?.body)).prompt);
-          return Response.json({ response: "The passenger lounge is closed." });
+          const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          changedFacts = String((JSON.parse(String(body.input)) as Record<string, string>).changedFacts);
+          return openAiResponse("The passenger lounge is closed.");
         }) as typeof fetch
       }
     );
 
     assert.deepEqual(summary, { body: "The passenger lounge is closed.", outcome: "generated" });
-    assert.match(prompt, /Current update\. The passenger lounge is closed\./);
+    assert.match(changedFacts, /Current update\. The passenger lounge is closed\./);
   });
 
-  it("falls back without calling Ollama when extracted facts are too long", async () => {
+  it("falls back without calling OpenAI when extracted facts are too long", async () => {
     let called = false;
     const summary = await summariseInformationChange(
       notices("Previous information."),
       notices("x".repeat(1501)),
       {
-        ollamaUrl: "http://ollama:11434",
+        apiKey: "test-key",
         fetchFn: (async () => {
           called = true;
-          return Response.json({ response: "Should not be used." });
+          return openAiResponse("Should not be used.");
         }) as typeof fetch
       }
     );
@@ -287,24 +298,22 @@ describe("information-change summaries", () => {
     assert.deepEqual(summary, { body: "Sailing information has been updated.", outcome: "fallback" });
   });
 
-  it("retries long output once with a shortening prompt", async () => {
+  it("falls back without retrying long output", async () => {
     let requestCount = 0;
     const summary = await summariseInformationChange(
       notices("Previous information."),
       notices("Changed passenger information."),
       {
-        ollamaUrl: "http://ollama:11434",
+        apiKey: "test-key",
         fetchFn: (async () => {
           requestCount += 1;
-          return Response.json({
-            response: requestCount === 1 ? "x".repeat(121) : "Changed passenger information."
-          });
+          return openAiResponse("x".repeat(121));
         }) as typeof fetch
       }
     );
 
-    assert.equal(requestCount, 2);
-    assert.deepEqual(summary, { body: "Changed passenger information.", outcome: "generated" });
+    assert.equal(requestCount, 1);
+    assert.deepEqual(summary, { body: "Sailing information has been updated.", outcome: "fallback" });
   });
 
   it("falls back when generated output is unsafe", async () => {
@@ -312,8 +321,8 @@ describe("information-change summaries", () => {
       notices("Previous information."),
       notices("Changed passenger information."),
       {
-        ollamaUrl: "http://ollama:11434",
-        fetchFn: (async () => Response.json({ response: "Changed passenger information. 👍" })) as typeof fetch
+        apiKey: "test-key",
+        fetchFn: (async () => openAiResponse("Changed passenger information. 👍")) as typeof fetch
       }
     );
 
@@ -325,8 +334,8 @@ describe("information-change summaries", () => {
       notices("Previous information."),
       notices("The 14:00 sailing is cancelled."),
       {
-        ollamaUrl: "http://ollama:11434",
-        fetchFn: (async () => Response.json({ response: "The 14:00 sailing has been updated." })) as typeof fetch
+        apiKey: "test-key",
+        fetchFn: (async () => openAiResponse("The 14:00 sailing has been updated.")) as typeof fetch
       }
     );
 
@@ -338,24 +347,37 @@ describe("information-change summaries", () => {
       notices("Previous information."),
       notices("The booking system has not yet been updated."),
       {
-        ollamaUrl: "http://ollama:11434",
-        fetchFn: (async () => Response.json({ response: "The booking system has been updated." })) as typeof fetch
+        apiKey: "test-key",
+        fetchFn: (async () => openAiResponse("The booking system has been updated.")) as typeof fetch
       }
     );
 
     assert.deepEqual(summary, { body: "Sailing information has been updated.", outcome: "fallback" });
   });
 
-  it("falls back without calling Ollama for removed-only notices", async () => {
+  it("validates safety terms against changed facts rather than unchanged context", async () => {
+    const summary = await summariseInformationChange(
+      notices("Bookings are closed 6-24 Sep.\n\nThe timetable has not yet been updated."),
+      notices("Bookings are closed 17-24 Sep.\n\nThe timetable has not yet been updated."),
+      {
+        apiKey: "test-key",
+        fetchFn: (async () => openAiResponse("Bookings are closed 17-24 Sep.")) as typeof fetch
+      }
+    );
+
+    assert.deepEqual(summary, { body: "Bookings are closed 17-24 Sep.", outcome: "generated" });
+  });
+
+  it("falls back without calling OpenAI for removed-only notices", async () => {
     let called = false;
     const summary = await summariseInformationChange(
       notices("Electronic message boards are out of order."),
       JSON.stringify([]),
       {
-        ollamaUrl: "http://ollama:11434",
+        apiKey: "test-key",
         fetchFn: (async () => {
           called = true;
-          return Response.json({ response: "Should not be used." });
+          return openAiResponse("Should not be used.");
         }) as typeof fetch
       }
     );
@@ -378,4 +400,15 @@ describe("APNs failure handling", () => {
 
 function notices(detail: string): string {
   return JSON.stringify([{ title: "Current update", detail, disruptionReason: null }]);
+}
+
+function openAiResponse(summary: string): Response {
+  return Response.json({
+    output: [{
+      content: [{
+        type: "output_text",
+        text: JSON.stringify({ summary })
+      }]
+    }]
+  });
 }

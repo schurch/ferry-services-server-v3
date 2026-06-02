@@ -63,7 +63,9 @@ async function notifyForService(
       },
       "Preparing information-change push message"
     );
-    const summary = await summariseInformationChange(oldService?.notificationInfo, service.notificationInfo);
+    const summary = await summariseInformationChange(oldService?.notificationInfo, service.notificationInfo, {
+      route: service.route
+    });
     if (summary.outcome === "suppressed") {
       logger.info({ serviceId: service.serviceId }, "Suppressing push for non-material information change");
       return;
