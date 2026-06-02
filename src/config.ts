@@ -98,7 +98,7 @@ function loadConfig() {
     ollama: {
       url: env.OLLAMA_URL ?? null,
       model: env.OLLAMA_MODEL ?? "qwen3:1.7b",
-      timeoutMs: env.OLLAMA_TIMEOUT_MS ?? 30000
+      timeoutMs: env.OLLAMA_TIMEOUT_MS ?? 60000
     },
     sentry: {
       serverDsn: env.SERVER_SENTRY_DSN ?? null,

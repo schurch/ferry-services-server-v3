@@ -3,6 +3,8 @@ import { logger } from "../logger.js";
 
 const FALLBACK_MESSAGE = "Sailing information has been updated.";
 const MAX_BODY_LENGTH = 120;
+const MAX_FACTS_LENGTH = 1500;
+const OLLAMA_KEEP_ALIVE = "5m";
 
 type Notice = {
   title: string;
@@ -45,11 +47,19 @@ export async function summariseInformationChange(
     return { body: null, outcome: "suppressed" };
   }
 
-  const facts = currentChangedFacts(previousNotices, nextNotices);
+  const { facts, removed } = currentChangedFacts(previousNotices, nextNotices);
   const ollamaUrl = options.ollamaUrl === undefined ? config.ollama.url : options.ollamaUrl;
-  if (!ollamaUrl || facts.length === 0) {
-    return fallback(!ollamaUrl ? "ollama-disabled" : "no-changed-facts", {
-      factCount: facts.length
+  if (facts.length === 0) {
+    return removed
+      ? fallback("removed-only-change")
+      : { body: null, outcome: "suppressed" };
+  }
+
+  const factsText = facts.join(" ");
+  if (!ollamaUrl || factsText.length > MAX_FACTS_LENGTH) {
+    return fallback(!ollamaUrl ? "ollama-disabled" : "changed-facts-too-long", {
+      factCount: facts.length,
+      factsLength: factsText.length
     });
   }
 
@@ -59,12 +69,13 @@ export async function summariseInformationChange(
   const firstPrompt = [
     "Rewrite exactly these facts as one plain-text ferry push notification under 100 characters.",
     "Do not add facts, context, markdown or emoji.",
-    `Facts: ${facts.join(" ")}`
+    "Do not omit operational state words that appear in the facts.",
+    `Facts: ${factsText}`
   ].join(" ");
 
   try {
     const first = await generate(ollamaUrl, model, timeoutMs, fetchFn, firstPrompt);
-    if (validBody(first)) {
+    if (validBody(first) && preservesSafetyTerms(factsText, first)) {
       return { body: first, outcome: "generated" };
     }
     if (first.length <= MAX_BODY_LENGTH) {
@@ -79,7 +90,7 @@ export async function summariseInformationChange(
       `Text: ${first}`
     ].join(" ");
     const retry = await generate(ollamaUrl, model, timeoutMs, fetchFn, retryPrompt);
-    if (validBody(retry)) {
+    if (validBody(retry) && preservesSafetyTerms(factsText, retry)) {
       return { body: retry, outcome: "generated" };
     }
     return fallback("retry-body-rejected", {
@@ -120,18 +131,109 @@ function parseNotices(value: string | undefined): Notice[] | null {
   }
 }
 
-function currentChangedFacts(previousNotices: Notice[], nextNotices: Notice[]): string[] {
+function currentChangedFacts(previousNotices: Notice[], nextNotices: Notice[]): { facts: string[]; removed: boolean } {
   const previousByTitle = new Map(previousNotices.map((notice) => [normaliseText(notice.title), notice]));
-  return nextNotices.flatMap((notice) => {
+  const nextTitles = new Set(nextNotices.map((notice) => normaliseText(notice.title)));
+  const facts: string[] = [];
+  let removed = previousNotices.some((notice) => !nextTitles.has(normaliseText(notice.title)));
+
+  for (const notice of nextNotices) {
     const previous = previousByTitle.get(normaliseText(notice.title));
-    return previous && normaliseNotice(previous) === normaliseNotice(notice)
-      ? []
-      : [noticeText(notice)];
+    if (!previous) {
+      facts.push(noticeText(notice));
+      continue;
+    }
+    if (normaliseNotice(previous) === normaliseNotice(notice)) {
+      continue;
+    }
+
+    const change = changedNoticeFacts(previous, notice);
+    facts.push(...change.facts);
+    removed ||= change.removed;
+  }
+
+  return { facts, removed };
+}
+
+function changedNoticeFacts(previous: Notice, next: Notice): { facts: string[]; removed: boolean } {
+  const previousParagraphs = splitParagraphs(previous.detail);
+  const nextParagraphs = splitParagraphs(next.detail);
+  const previousParagraphKeys = new Set(previousParagraphs.map(normaliseText));
+  const nextParagraphKeys = new Set(nextParagraphs.map(normaliseText));
+  const previousSentenceKeys = new Set(splitSentences(previous.detail).map(normaliseText));
+  const changedParagraphs = nextParagraphs
+    .map((paragraph, index) => ({ paragraph, index }))
+    .filter(({ paragraph }) => !previousParagraphKeys.has(normaliseText(paragraph)));
+  const facts = changedParagraphs.flatMap(({ paragraph, index }) => {
+    if (isLinkOnlyParagraph(paragraph)) {
+      return [];
+    }
+    const changedSentences = splitSentences(paragraph)
+      .filter((sentence) => !previousSentenceKeys.has(normaliseText(sentence)));
+    const changedFacts = changedSentences.length > 0 ? changedSentences : [paragraph];
+    return plainText(paragraph).endsWith(":")
+      ? [...changedFacts, ...trailingParagraphContext(nextParagraphs, index)]
+      : changedFacts;
   });
+
+  const reasonChanged = normaliseText(previous.disruptionReason ?? "") !== normaliseText(next.disruptionReason ?? "");
+  if (reasonChanged && next.disruptionReason) {
+    facts.push(`Disruption reason: ${next.disruptionReason}.`);
+  }
+
+  return {
+    facts: uniqueFacts(facts),
+    removed: previousParagraphs.some((paragraph) => !nextParagraphKeys.has(normaliseText(paragraph)))
+      || (reasonChanged && !next.disruptionReason)
+  };
 }
 
 function noticeText(notice: Notice): string {
   return [notice.title, notice.detail, notice.disruptionReason].filter(Boolean).map((value) => plainText(value ?? "")).join(". ");
+}
+
+function splitParagraphs(value: string): string[] {
+  return value
+    .split(/\n\s*\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 0 && !/^\s*\[[^\]]+\]:\s*\S+.*$/s.test(paragraph));
+}
+
+function splitSentences(value: string): string[] {
+  return splitParagraphs(value).flatMap((paragraph) => paragraph
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean));
+}
+
+function trailingParagraphContext(paragraphs: string[], index: number): string[] {
+  const context: string[] = [];
+  for (const paragraph of paragraphs.slice(index + 1)) {
+    if (isLinkOnlyParagraph(paragraph)) {
+      continue;
+    }
+    context.push(paragraph);
+    if (/[.!?]\s*$/.test(plainText(paragraph))) {
+      break;
+    }
+  }
+  return context;
+}
+
+function isLinkOnlyParagraph(value: string): boolean {
+  return /^\s*\[[^\]]+\](?:\([^)]+\)|\[[^\]]*\])\s*$/.test(value);
+}
+
+function uniqueFacts(facts: string[]): string[] {
+  const seen = new Set<string>();
+  return facts.map(plainText).filter((fact) => {
+    const key = normaliseText(fact);
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }
 
 function normaliseNotices(notices: Notice[]): string {
@@ -174,7 +276,7 @@ async function generate(
       model,
       stream: false,
       think: false,
-      keep_alive: "0",
+      keep_alive: OLLAMA_KEEP_ALIVE,
       prompt,
       options: {
         temperature: 0,
@@ -199,6 +301,19 @@ function validBody(value: string): boolean {
     && !/[*_`#[\]<>]/.test(value)
     && !/\p{Extended_Pictographic}/u.test(value)
     && !/^(?:here(?:'s| is)|notification:)/i.test(value);
+}
+
+function preservesSafetyTerms(facts: string, body: string): boolean {
+  const requiredTerms: Array<[RegExp, RegExp]> = [
+    [/\bcancell?/iu, /\bcancell?/iu],
+    [/\bclos(?:e|ed|ure)\b/iu, /\bclos(?:e|ed|ure)\b/iu],
+    [/\bsuspend/iu, /\bsuspend/iu],
+    [/\bno\b/iu, /\bno\b/iu],
+    [/\bnot\b/iu, /\bnot\b/iu],
+    [/\bwithout\b/iu, /\bwithout\b/iu],
+    [/\bunavailable\b/iu, /\bunavailable\b/iu]
+  ];
+  return requiredTerms.every(([factsPattern, bodyPattern]) => !factsPattern.test(facts) || bodyPattern.test(body));
 }
 
 function fallback(reason: string, details: Record<string, unknown> = {}): InformationSummary {
