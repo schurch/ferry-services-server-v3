@@ -37,7 +37,7 @@
     "marked": "^18.0.4",
     "node-html-parser": "^7.1.0",
     "pino": "^10.3.1",
-    "yauzl": "^3.3.1"
+    "yauzl": "^3.3.2"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
