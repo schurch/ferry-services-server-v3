@@ -1,3 +1,5 @@
+-- migrate: vacuum-after
+
 CREATE TABLE IF NOT EXISTS service_status_notice_payloads (
     payload_id INTEGER PRIMARY KEY AUTOINCREMENT,
     detail_text TEXT NULL,
